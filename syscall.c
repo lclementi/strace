@@ -1969,9 +1969,7 @@ void alloc_mmap_cache(struct tcb* tcp) {
     char binary_path[512];
     binary_path[0] = '\0'; // 'reset' it just to be paranoid
 
-    // TODO: add support for paths with SPACES in them ...
-    // right now we assume that filenames have no spaces
-    sscanf(s, "%lx-%lx %*c%*c%*c%*c %lx %*x:%*x %*d %s", &start_addr, &end_addr, &mmap_offset, binary_path);
+    sscanf(s, "%lx-%lx %*c%*c%*c%*c %lx %*x:%*x %*d %[^\n]", &start_addr, &end_addr, &mmap_offset, binary_path);
 
     // there are some special 'fake files' like "[vdso]", "[heap]", "[stack]",
     // etc., so simply IGNORE those!
@@ -2051,7 +2049,7 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
       // calculate the true offset into the binary ...
       // but still print out the original address because it can be useful too ...
       unsigned long true_offset = addr - cur->start_addr + cur->mmap_offset;
-      tprintf("%s:0x%lx:0x%lx ", cur->binary_filename, true_offset, addr);
+      tprintf(" > %s:0x%lx:0x%lx\n", cur->binary_filename, true_offset, addr);
       return; // exit early
     }
     else if (lower == upper) {
@@ -2176,26 +2174,6 @@ trace_syscall_entering(struct tcb *tcp)
 		goto ret;
 	}
 
-
-  // need libunwind make this conditional
-  extern int use_libunwind;
-  if (use_libunwind) {
-    struct user_regs_struct cur_regs;
-    EXITIF(ptrace(PTRACE_GETREGS, tcp->pid, NULL, (long)&cur_regs) < 0);
-    // caching for efficiency ...
-    if (!tcp->mmap_cache) {
-      alloc_mmap_cache(tcp);
-    }
-    // use libunwind to unwind the stack, which works even for code compiled
-    // without a frame pointer, but is relatively SLOW
-    tprintf("[ "); // opening brace for stack trace
-    print_libunwind_backtrace(tcp);
-    tprintf("] "); // closing brace for stack trace
-  }
-  // end need lib
-
-
-
 	printleader(tcp);
 	if (tcp->qual_flg & UNDEFINED_SCNO)
 		tprintf("%s(", undefined_scno_name(tcp));
@@ -2205,6 +2183,21 @@ trace_syscall_entering(struct tcb *tcp)
 		res = printargs(tcp);
 	else
 		res = tcp->s_ent->sys_func(tcp);
+
+    // need libunwind make this conditional
+    extern int use_libunwind;
+    if (use_libunwind) {
+        struct user_regs_struct cur_regs;
+        EXITIF(ptrace(PTRACE_GETREGS, tcp->pid, NULL, (long)&cur_regs) < 0);
+        // caching for efficiency ...
+        if (!tcp->mmap_cache) {
+          alloc_mmap_cache(tcp);
+        }
+        // use libunwind to unwind the stack, which works even for code compiled
+        // without a frame pointer, but is relatively SLOW
+        print_libunwind_backtrace(tcp);
+    }
+    // end need lib
 
 	fflush(tcp->outf);
  ret:
