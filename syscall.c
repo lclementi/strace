@@ -2192,22 +2192,6 @@ trace_syscall_entering(struct tcb *tcp)
 	else
 		res = tcp->s_ent->sys_func(tcp);
 
-    // need libunwind make this conditional
-    extern int use_libunwind;
-    if (use_libunwind) {
-        struct user_regs_struct cur_regs;
-        if (ptrace(PTRACE_GETREGS, tcp->pid, NULL, (long)&cur_regs) < 0)
-            perror_msg_and_die("Unable to access process register (%d)", tcp->pid);
-        // caching for efficiency ...
-        if (!tcp->mmap_cache) {
-          alloc_mmap_cache(tcp);
-        }
-        // use libunwind to unwind the stack, which works even for code compiled
-        // without a frame pointer, but is relatively SLOW
-        print_libunwind_backtrace(tcp);
-    }
-    // end need lib
-
 	fflush(tcp->outf);
  ret:
 	tcp->flags |= TCB_INSYSCALL;
@@ -2868,6 +2852,22 @@ trace_syscall_exiting(struct tcb *tcp)
 	}
 	tprints("\n");
 	dumpio(tcp);
+
+    // need libunwind make this conditional
+    extern int use_libunwind;
+    if (use_libunwind) {
+        struct user_regs_struct cur_regs;
+        if (ptrace(PTRACE_GETREGS, tcp->pid, NULL, (long)&cur_regs) < 0)
+            perror_msg_and_die("Unable to access process register (%d)", tcp->pid);
+        // caching for efficiency ...
+        if (!tcp->mmap_cache) {
+          alloc_mmap_cache(tcp);
+        }
+        // use libunwind to unwind the stack, which works even for code compiled
+        print_libunwind_backtrace(tcp);
+    }
+    // end need lib
+
 	line_ended();
 
  ret:
