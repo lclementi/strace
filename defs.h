@@ -397,15 +397,6 @@ typedef struct ioctlent {
 // might be #include conflicts
 #include "libunwind-ptrace.h"
 
-// pgbovine
-// like an assert except that it always fires
-#define EXITIF(x) do { \
-  if (x) { \
-    fprintf(stderr, "Fatal error in %s [%s:%d]\n", __FUNCTION__, __FILE__, __LINE__); \
-    exit(1); \
-  } \
-} while(0)
-
 #if defined(X86_64)
 // current_personality == 1 means that a 64-bit cde-exec is actually tracking a
 // 32-bit target process at the moment:

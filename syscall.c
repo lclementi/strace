@@ -1950,65 +1950,72 @@ get_syscall_args(struct tcb *tcp)
 // pgbovine - keep a cache of /proc/<pid>/mmap contents to avoid unnecessary reads
 // make sure it's a SORTED array, so that we can do a fast binary search!
 void alloc_mmap_cache(struct tcb* tcp) {
-  EXITIF(tcp->mmap_cache);
-  EXITIF(tcp->mmap_cache_size); // make sure this starts at zero
 
-  // start with a small dynamically-allocated array and then use realloc() to
-  // dynamically expand as needed
-  int cur_array_size = 10;
-  struct mmap_cache_t* cache_head = malloc(cur_array_size * sizeof(*cache_head));
+    if ( tcp->mmap_cache) 
+        perror_msg_and_die("Memory map cache is empty");
+    if ( tcp->mmap_cache_size)
+        perror_msg_and_die("Memory map cache is empty"); 
 
-  char filename[30];
-  sprintf(filename, "/proc/%d/maps", tcp->pid);
-
-  FILE* f = fopen(filename, "r");
-  EXITIF(!f);
-  char s[300];
-  while (fgets(s, sizeof(s), f) != NULL) {
-    unsigned long start_addr, end_addr, mmap_offset;
-    char binary_path[512];
-    binary_path[0] = '\0'; // 'reset' it just to be paranoid
-
-    sscanf(s, "%lx-%lx %*c%*c%*c%*c %lx %*x:%*x %*d %[^\n]", &start_addr, &end_addr, &mmap_offset, binary_path);
-
-    // there are some special 'fake files' like "[vdso]", "[heap]", "[stack]",
-    // etc., so simply IGNORE those!
-    if (binary_path[0] == '[' && binary_path[strlen(binary_path) - 1] == ']') {
-      continue;
+    // start with a small dynamically-allocated array and then use realloc() to
+    // dynamically expand as needed
+    int cur_array_size = 10;
+    struct mmap_cache_t* cache_head = malloc(cur_array_size * sizeof(*cache_head));
+  
+    char filename[30];
+    sprintf(filename, "/proc/%d/maps", tcp->pid);
+  
+    FILE* f = fopen(filename, "r");
+    if ( ! f )
+          perror_msg_and_die("Unable to open %s", filename);
+    char s[300];
+    while (fgets(s, sizeof(s), f) != NULL) {
+        unsigned long start_addr, end_addr, mmap_offset;
+        char binary_path[512];
+        binary_path[0] = '\0'; // 'reset' it just to be paranoid
+  
+        sscanf(s, "%lx-%lx %*c%*c%*c%*c %lx %*x:%*x %*d %[^\n]", &start_addr, &end_addr, &mmap_offset, binary_path);
+  
+        // there are some special 'fake files' like "[vdso]", "[heap]", "[stack]",
+        // etc., so simply IGNORE those!
+        if (binary_path[0] == '[' && binary_path[strlen(binary_path) - 1] == ']') {
+          continue;
+        }
+  
+        // empty string
+        if (binary_path[0] == '\0') {
+          continue;
+        }
+  
+        if(end_addr < start_addr)
+            perror_msg_and_die("Unrecognized maps file format %s", filename);
+  
+        struct mmap_cache_t* cur_entry = &cache_head[tcp->mmap_cache_size];
+        cur_entry->start_addr = start_addr;
+        cur_entry->end_addr = end_addr;
+        cur_entry->mmap_offset = mmap_offset;
+        cur_entry->binary_filename = strdup(binary_path); // need to free later!
+  
+        // sanity check to make sure that we're storing non-overlapping regions in
+        // ascending order:
+        if (tcp->mmap_cache_size > 0) {
+          struct mmap_cache_t* prev_entry = &cache_head[tcp->mmap_cache_size - 1];
+          if (prev_entry->start_addr >= cur_entry->start_addr)
+              perror_msg_and_die("Overlaying memory region in %s", filename);
+          if (prev_entry->end_addr > cur_entry->start_addr)
+              perror_msg_and_die("Overlaying memory region in %s", filename);
+        }
+  
+        tcp->mmap_cache_size++;
+  
+        // resize:
+        if (tcp->mmap_cache_size >= cur_array_size) {
+          cur_array_size *= 2; // double in size!
+          cache_head = realloc(cache_head, cur_array_size * sizeof(*cache_head));
+        }
     }
-
-    // empty string
-    if (binary_path[0] == '\0') {
-      continue;
-    }
-
-    EXITIF(end_addr < start_addr);
-
-    struct mmap_cache_t* cur_entry = &cache_head[tcp->mmap_cache_size];
-    cur_entry->start_addr = start_addr;
-    cur_entry->end_addr = end_addr;
-    cur_entry->mmap_offset = mmap_offset;
-    cur_entry->binary_filename = strdup(binary_path); // need to free later!
-
-    // sanity check to make sure that we're storing non-overlapping regions in
-    // ascending order:
-    if (tcp->mmap_cache_size > 0) {
-      struct mmap_cache_t* prev_entry = &cache_head[tcp->mmap_cache_size - 1];
-      EXITIF(prev_entry->start_addr >= cur_entry->start_addr);
-      EXITIF(prev_entry->end_addr > cur_entry->start_addr); // could be ==
-    }
-
-    tcp->mmap_cache_size++;
-
-    // resize:
-    if (tcp->mmap_cache_size >= cur_array_size) {
-      cur_array_size *= 2; // double in size!
-      cache_head = realloc(cache_head, cur_array_size * sizeof(*cache_head));
-    }
-  }
-  fclose(f);
-
-  tcp->mmap_cache = cache_head;
+    fclose(f);
+  
+    tcp->mmap_cache = cache_head;
 }
 
 // pgbovine - remember to delete the mmap cache at the END of any system calls
@@ -2034,7 +2041,9 @@ void delete_mmap_cache(struct tcb* tcp) {
 //
 // Pre-condition: tcp->mmap_cache is already initialized
 static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
-  EXITIF(!tcp->mmap_cache);
+  if (!tcp->mmap_cache)
+      perror_msg_and_die("Memory maps cache is empty");
+
 
   // since tcp->mmap_cache is sorted, do a binary search to find the cache entry
   // that contains addr
@@ -2052,11 +2061,6 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
       tprintf(" > %s:0x%lx:0x%lx\n", cur->binary_filename, true_offset, addr);
       return; // exit early
     }
-    else if (lower == upper) {
-      // still can't find the entry, so just exit!
-      EXITIF(!(lower == mid)); // sanity check
-      return;
-    }
     else if (addr < cur->start_addr) {
       upper = mid - 1;
     }
@@ -2064,6 +2068,8 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
       lower = mid + 1;
     }
   }
+  //TODO find a better way to handle this
+  //perror_msg("Unable to find the mapped code in the cache");
 
 }
 
@@ -2075,9 +2081,11 @@ void print_libunwind_backtrace(struct tcb* tcp) {
   unw_cursor_t c;
 
   extern unw_addr_space_t libunwind_as;
-  EXITIF(unw_init_remote(&c, libunwind_as, tcp->libunwind_ui) < 0);
+  if (unw_init_remote(&c, libunwind_as, tcp->libunwind_ui) < 0)
+      perror_msg_and_die("Unable to initiate libunwind");
   do {
-    EXITIF(unw_get_reg(&c, UNW_REG_IP, &ip) < 0);
+    if (unw_get_reg(&c, UNW_REG_IP, &ip) < 0)
+        perror_msg_and_die("Unable to walk the stack of process %d", tcp->pid);
 
     print_normalized_addr(tcp, ip);
 
@@ -2085,7 +2093,7 @@ void print_libunwind_backtrace(struct tcb* tcp) {
 
     if (++n > 255) {
       /* guard against bad unwind info in old libraries... */
-      fprintf(stderr, "libunwind warning: too deeply nested---assuming bogus unwind\n");
+      perror_msg("libunwind warning: too deeply nested---assuming bogus unwind\n");
       break;
     }
   } while (ret > 0);
@@ -2188,7 +2196,8 @@ trace_syscall_entering(struct tcb *tcp)
     extern int use_libunwind;
     if (use_libunwind) {
         struct user_regs_struct cur_regs;
-        EXITIF(ptrace(PTRACE_GETREGS, tcp->pid, NULL, (long)&cur_regs) < 0);
+        if (ptrace(PTRACE_GETREGS, tcp->pid, NULL, (long)&cur_regs) < 0)
+            perror_msg_and_die("Unable to access process register (%d)", tcp->pid);
         // caching for efficiency ...
         if (!tcp->mmap_cache) {
           alloc_mmap_cache(tcp);
