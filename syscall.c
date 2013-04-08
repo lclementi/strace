@@ -1946,7 +1946,7 @@ get_syscall_args(struct tcb *tcp)
 	return 1;
 }
 
-
+#ifdef LIB_UNWIND
 /*
  * caching of /proc/ID/maps for each process to speed up stack tracing
  *
@@ -2099,7 +2099,7 @@ void print_libunwind_backtrace(struct tcb* tcp) {
     }
   } while (ret > 0);
 }
-
+#endif
 
 static int
 trace_syscall_entering(struct tcb *tcp)
@@ -2854,7 +2854,7 @@ trace_syscall_exiting(struct tcb *tcp)
 	tprints("\n");
 	dumpio(tcp);
 
-    // need libunwind make this conditional
+#ifdef LIB_UNWIND
     extern int use_libunwind;
     if (use_libunwind) {
         struct user_regs_struct cur_regs;
@@ -2867,8 +2867,7 @@ trace_syscall_exiting(struct tcb *tcp)
         // use libunwind to unwind the stack, which works even for code compiled
         print_libunwind_backtrace(tcp);
     }
-    // end need lib
-
+#endif
 	line_ended();
 
  ret:
