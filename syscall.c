@@ -1947,8 +1947,11 @@ get_syscall_args(struct tcb *tcp)
 }
 
 
-// pgbovine - keep a cache of /proc/<pid>/mmap contents to avoid unnecessary reads
-// make sure it's a SORTED array, so that we can do a fast binary search!
+/*
+ * caching of /proc/ID/maps for each process to speed up stack tracing
+ *
+ * The cache must be refreshed after some syscall: mmap, mprotect, munmap, execve 
+ */
 void alloc_mmap_cache(struct tcb* tcp) {
 
     if ( tcp->mmap_cache) 
@@ -2018,9 +2021,7 @@ void alloc_mmap_cache(struct tcb* tcp) {
     tcp->mmap_cache = cache_head;
 }
 
-// pgbovine - remember to delete the mmap cache at the END of any system calls
-// that might change /proc/<pid>/mmap
-// examples of such system calls include: mmap, mprotect, munmap, execve
+/* deleting the cache */
 void delete_mmap_cache(struct tcb* tcp) {
   int i;
   for (i = 0; i < tcp->mmap_cache_size; i++) {
@@ -2032,14 +2033,14 @@ void delete_mmap_cache(struct tcb* tcp) {
 }
 
 
-// given a memory address addr and a pid, tprintf the following string:
-//   <absolute path to binary>:<hex address offset in that binary>
-//
-// e.g., "/lib32/libc-2.11.1.so:0x3asdf " (include trailing whitespace)
-//
-// TODO: this currently doesn't properly handle paths with SPACES in them!
-//
-// Pre-condition: tcp->mmap_cache is already initialized
+/*
+ * given a memory address addr and a pid, tprintf the following string:
+ *   <absolute path to binary>:<hex address offset in that binary>:<absolute address>
+ *
+ *   e.g., "/lib32/libc-2.11.1.so:0x3asdf:0x403asdf " (include trailing whitespace)
+ *
+ * Pre-condition: tcp->mmap_cache is already initialized
+ */
 static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
   if (!tcp->mmap_cache)
       perror_msg_and_die("Memory maps cache is empty");
@@ -2074,7 +2075,7 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
 }
 
 
-// use libunwind to unwind the stack and print a backtrace:
+/* use libunwind to unwind the stack and print a backtrace */
 void print_libunwind_backtrace(struct tcb* tcp) {
   unw_word_t ip;
   int n = 0, ret;

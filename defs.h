@@ -393,18 +393,13 @@ typedef struct ioctlent {
 } struct_ioctlent;
 
 
-// pgbovine - put this #include as LATE in the file as possible, or else there
-// might be #include conflicts
+#define LIB_UNWIND
+#ifdef LIB_UNWIND
 #include "libunwind-ptrace.h"
 
-#if defined(X86_64)
-// current_personality == 1 means that a 64-bit cde-exec is actually tracking a
-// 32-bit target process at the moment:
-#define IS_32BIT_EMU (current_personality == 1)
-#endif
-
-// pgbovine - keep a sorted array of cache entries, so that we can binary search
-// through it
+/* keep a sorted array of cache entries, so that we can binary search
+ * through it
+ */
 struct mmap_cache_t {
   // example entry:
   // 7fabbb09b000-7fabbb09f000 r--p 00179000 fc:00 1180246 /lib/libc-2.11.1.so
@@ -418,6 +413,7 @@ struct mmap_cache_t {
   unsigned long mmap_offset;
   char* binary_filename;
 };
+#endif
 
 /* Trace Control Block */
 struct tcb {
@@ -445,15 +441,19 @@ struct tcb {
 				/* Support for tracing forked processes: */
 	long inst[2];		/* Saved clone args (badly named) */
 
+#ifdef LIB_UNWIND
     // keep a cache of /proc/<pid>/mmap contents to avoid unnecessary file reads
     struct mmap_cache_t* mmap_cache;
     int mmap_cache_size;
-    struct UPT_info* libunwind_ui; // for libunwind
+    struct UPT_info* libunwind_ui;
+#endif
 };
  
-// pgbovine
+
+#ifdef LIB_UNWIND
 void alloc_mmap_cache(struct tcb* tcp);
 void delete_mmap_cache(struct tcb* tcp);
+#endif
 
 /* TCB flags */
 #define TCB_INUSE		00001	/* This table entry is in use */
