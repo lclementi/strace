@@ -2048,22 +2048,57 @@ void delete_mmap_cache(struct tcb* tcp) {
 
 
 #include <stdarg.h>
-static disassemble_info dinfo;
+static asymbol **dynsyms;
+static asymbol **ssyms;
+static asymbol *synthsyms;
+static long dynsymcount, synthcount, ssymcount;
+
 int print;
 
-int custom_fprintf(void * stream, const char * format, ...)
+static void
+objdump_print_address (bfd_vma vma, struct disassemble_info *inf)
+{
+    if ( print ){
+        int i;
+        //TODO there will not be more that 20 aliases right?
+        asymbol * good_sym[20];
+        int alloc_good_sym = 0;
+        for (i = 0; i < dynsymcount; i++){
+
+            if ( bfd_asymbol_value(dynsyms[i]) == vma ) {
+                good_sym[alloc_good_sym] = dynsyms[i];
+                alloc_good_sym++;
+            }
+        }
+        for (i = 0; i < synthcount; i++){
+            if ( bfd_asymbol_value(synthsyms + i) == vma ) {
+                good_sym[alloc_good_sym] = synthsyms + i;
+                alloc_good_sym++;
+            }
+        }
+        tprintf(" 0x%lx ", vma);
+        //we have all the good symbols
+        for (i = 0; i < alloc_good_sym; i++){
+            tprintf("%s,", good_sym[i]->name );
+        }
+    }//if
+}
+
+
+int 
+custom_fprintf(void * stream, const char * format, ...)
 {
     /* silly amount */
     char    str[128] = {0};
-    int rv;
+    int rv = 0;
     va_list args;
 
     if (print) {
-    va_start(args, format);
-    rv = vsnprintf(str, ARRAY_SIZE(str) - 1, format, args);
-    va_end(args);
+        va_start(args, format);
+        rv = vsnprintf(str, ARRAY_SIZE(str) - 1, format, args);
+        va_end(args);
 
-    tprintf("%s", str);
+        tprintf("%s", str);
     }
     return rv;
 }
@@ -2073,9 +2108,9 @@ int custom_fprintf(void * stream, const char * format, ...)
 char * 
 get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
 {
-
-    asymbol **dynsyms;
     bfd * abfd;
+    ssymcount = 0, dynsymcount = 0, synthcount = 0;
+    ssyms = NULL, dynsyms = NULL, synthsyms = NULL;
 
     tprintf("filename: %s addr: %lx\n", filename, true_offset);
     //try to open file
@@ -2083,17 +2118,32 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
         perror_msg_and_die("unable to open %s", filename);
     }
 
-    /* Read in the dynamic symbols.  */
+    /* Read in the  symbols.  */
     bfd_check_format(abfd, bfd_object);
-    int storage = bfd_get_dynamic_symtab_upper_bound (abfd);
-    if ( storage <= 0 ) 
-        perror_msg_and_die("Can not get storage size");
+    //static
+    int storage = bfd_get_symtab_upper_bound (abfd);
+    if (storage < 0)
+        perror_msg_and_die("Can not get storage size for static symbol");
+    if ( storage )
+        ssyms = (asymbol **) malloc (storage);
+        if ( ! ssyms )
+                perror_msg_and_die("Can not get storage size static symbol");
+        ssymcount = bfd_canonicalize_symtab (abfd, ssyms);
+    //dynamic
+    storage = bfd_get_dynamic_symtab_upper_bound (abfd);
+    if ( storage < 0 ) 
+        perror_msg_and_die("Can not get storage size for dynamic");
+    if ( storage )
+        dynsyms = (asymbol **) malloc (storage);
+        if ( ! dynsyms )
+            perror_msg_and_die("Can not get storage size for dynamic");
+        dynsymcount = bfd_canonicalize_dynamic_symtab (abfd, dynsyms);
+    synthcount = bfd_get_synthetic_symtab (abfd, ssymcount, ssyms,
+                                           dynsymcount, dynsyms, &synthsyms);
 
+    //allsymscount = dynsymcount + synthcount + ssymcount;
+    //allsyms = (asymbol **) malloc( allsymscount * sizeof(asymbol **)  )
 
-    dynsyms = (asymbol **) malloc (storage);
-    if ( ! dynsyms )
-        perror_msg_and_die("Can not get storage size");
-    long dynsymcount = bfd_canonicalize_dynamic_symtab (abfd, dynsyms);
 
     disassembler_ftype disassemble_fn = disassembler (abfd);
     if ( ! disassemble_fn ) 
@@ -2116,11 +2166,12 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     }
 
 
-    tprintf("Starting disassebly at %lx symname %s\n", closer_symbol_address, closer_symbol_name);
+    tprintf("Starting disassebly at %lx with name %s\n", closer_symbol_address, closer_symbol_name);
 
 
     unsigned long vma ;
     int size;
+    disassemble_info dinfo;
     asection * sec;
 
     //initialize the dinfo data structure
@@ -2129,27 +2180,19 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     dinfo.arch    = bfd_get_arch(abfd);
     dinfo.mach    = bfd_get_mach(abfd);
     dinfo.endian  = abfd->xvec->byteorder;
+    dinfo.print_address_func = objdump_print_address;
     disassemble_init_for_target(&dinfo);
-   
 
-    int debug = 0;
-    if ( strcmp(filename, "/bin/ls") )
-        debug = 1;
+
     //find the section we need to disassemble
     int found_it = 0; //false
     for (sec = abfd->sections; sec != NULL; sec = sec->next){
-
-        if (!debug)
-                tprintf("section %s\n", sec->name);
 
         vma = bfd_get_section_vma(abfd, sec);
         if (true_offset < vma){
                 continue;
         }
         size = bfd_section_size(abfd, sec);
-
-        if (!debug)
-                tprintf("start vma: %lx, size: %d\n",vma,size );
         
         if (true_offset <= vma + size){
             //ok true_offset is within vma and vma + size
@@ -2175,17 +2218,19 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     dinfo.buffer_length = size;
     dinfo.buffer_vma    = bfd_section_vma(sec->owner, sec);
 
-    if (vma > closer_symbol_address )
-        tprintf("using section vma\n");
-    else
+    //the beginning of the section is closer that the symbol
+    if (vma < closer_symbol_address )
         vma = closer_symbol_address;
 
-    print = false;
+    print = 0;
     while(vma != true_offset) {
-        dinfo.insn_info_valid = 0;
-        if ((true_offset - vma) <= 8 )
-            print = true;
 
+        dinfo.insn_info_valid = 0;
+        if ((true_offset - vma) <= 9 ) {
+            //TODO find a better way to understand the off set to the next instruction
+            print = 1;
+            //tprintf("%lx  ", vma);
+        }
         size = disassemble_fn(vma, &dinfo);
         if (print)
             tprintf("\n");
@@ -2197,7 +2242,12 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     }
 
     bfd_close(abfd);
-    free(dynsyms);
+    if ( ssyms )
+        free(ssyms);
+    if ( synthsyms )
+        free(synthsyms);
+    if ( dynsyms )
+        free(dynsyms);
     free(buf);
     return NULL;
 }
