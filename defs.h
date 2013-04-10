@@ -396,6 +396,8 @@ typedef struct ioctlent {
 #define LIB_UNWIND
 #ifdef LIB_UNWIND
 #include "libunwind-ptrace.h"
+#include <bfd.h>
+#include <dis-asm.h>
 
 /* keep a sorted array of cache entries, so that we can binary search
  * through it
@@ -412,6 +414,8 @@ struct mmap_cache_t {
   unsigned long end_addr;
   unsigned long mmap_offset;
   char* binary_filename;
+  //is this mmap the current program?
+  int current_program;
 };
 #endif
 

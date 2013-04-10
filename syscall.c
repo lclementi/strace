@@ -1996,8 +1996,10 @@ void alloc_mmap_cache(struct tcb* tcp) {
         cur_entry->start_addr = start_addr;
         cur_entry->end_addr = end_addr;
         cur_entry->mmap_offset = mmap_offset;
-        cur_entry->binary_filename = strdup(binary_path); // need to free later!
-  
+        cur_entry->binary_filename = strdup(binary_path);
+
+
+
         // sanity check to make sure that we're storing non-overlapping regions in
         // ascending order:
         if (tcp->mmap_cache_size > 0) {
@@ -2007,6 +2009,18 @@ void alloc_mmap_cache(struct tcb* tcp) {
           if (prev_entry->end_addr > cur_entry->start_addr)
               perror_msg_and_die("Overlaying memory region in %s", filename);
         }
+
+        //TODO man readlink implement proper checking 
+        size_t size;
+        sprintf(filename, "/proc/%d/exe", tcp->pid);
+        if ( ! (size = readlink(filename, s, 300)) )
+                perror_msg_and_die("Unable to read process /proc/PID/exe");
+        s[size] = '\0';//null terminating the string
+
+        if ( strcmp(s, binary_path) == 0 )
+            cur_entry->current_program = 1; //true
+        else
+            cur_entry->current_program = 0;
   
         tcp->mmap_cache_size++;
   
@@ -2030,6 +2044,162 @@ void delete_mmap_cache(struct tcb* tcp) {
   free(tcp->mmap_cache);
   tcp->mmap_cache = NULL;
   tcp->mmap_cache_size = 0;
+}
+
+
+#include <stdarg.h>
+static disassemble_info dinfo;
+int print;
+
+int custom_fprintf(void * stream, const char * format, ...)
+{
+    /* silly amount */
+    char    str[128] = {0};
+    int rv;
+    va_list args;
+
+    if (print) {
+    va_start(args, format);
+    rv = vsnprintf(str, ARRAY_SIZE(str) - 1, format, args);
+    va_end(args);
+
+    tprintf("%s", str);
+    }
+    return rv;
+}
+
+
+
+char * 
+get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
+{
+
+    asymbol **dynsyms;
+    bfd * abfd;
+
+    tprintf("filename: %s addr: %lx\n", filename, true_offset);
+    //try to open file
+    if ((abfd = bfd_openr(filename, NULL)) == NULL) {
+        perror_msg_and_die("unable to open %s", filename);
+    }
+
+    /* Read in the dynamic symbols.  */
+    bfd_check_format(abfd, bfd_object);
+    int storage = bfd_get_dynamic_symtab_upper_bound (abfd);
+    if ( storage <= 0 ) 
+        perror_msg_and_die("Can not get storage size");
+
+
+    dynsyms = (asymbol **) malloc (storage);
+    if ( ! dynsyms )
+        perror_msg_and_die("Can not get storage size");
+    long dynsymcount = bfd_canonicalize_dynamic_symtab (abfd, dynsyms);
+
+    disassembler_ftype disassemble_fn = disassembler (abfd);
+    if ( ! disassemble_fn ) 
+        perror_msg_and_die("Can not initialize disassebler");
+
+    int i;
+    unsigned long closer_symbol_address = 0;
+    unsigned long current_address = 0;
+    char * closer_symbol_name = NULL;
+    for (i = 0; i < dynsymcount; i++){
+        //find the closest symbol going backwards
+        current_address = bfd_asymbol_value(dynsyms[i]);
+
+        if ( (current_address < true_offset) &&
+              ( current_address > closer_symbol_address) ){
+            //we found a new start address
+            closer_symbol_address = current_address;
+            closer_symbol_name = dynsyms[i]->name;
+        }
+    }
+
+
+    tprintf("Starting disassebly at %lx symname %s\n", closer_symbol_address, closer_symbol_name);
+
+
+    unsigned long vma ;
+    int size;
+    asection * sec;
+
+    //initialize the dinfo data structure
+    init_disassemble_info(&dinfo, NULL, custom_fprintf);
+    dinfo.flavour = bfd_get_flavour(abfd);
+    dinfo.arch    = bfd_get_arch(abfd);
+    dinfo.mach    = bfd_get_mach(abfd);
+    dinfo.endian  = abfd->xvec->byteorder;
+    disassemble_init_for_target(&dinfo);
+   
+
+    int debug = 0;
+    if ( strcmp(filename, "/bin/ls") )
+        debug = 1;
+    //find the section we need to disassemble
+    int found_it = 0; //false
+    for (sec = abfd->sections; sec != NULL; sec = sec->next){
+
+        if (!debug)
+                tprintf("section %s\n", sec->name);
+
+        vma = bfd_get_section_vma(abfd, sec);
+        if (true_offset < vma){
+                continue;
+        }
+        size = bfd_section_size(abfd, sec);
+
+        if (!debug)
+                tprintf("start vma: %lx, size: %d\n",vma,size );
+        
+        if (true_offset <= vma + size){
+            //ok true_offset is within vma and vma + size
+            found_it = 1; //true
+            break;
+        }
+    }//for
+
+    if ( ! found_it ) 
+        perror_msg_and_die("Unable to find the proper section.");
+
+    size = bfd_section_size(sec->owner, sec);
+    unsigned char * buf  = malloc(size);
+    if ( ! buf ) 
+        perror_msg_and_die("Unable to allocate memory for disassembly.\n");
+
+    if(!bfd_get_section_contents(sec->owner, sec, buf, 0, size)) {
+        free(buf);
+        perror_msg_and_die("Unable to copy code from binary for disassembly.\n");
+    }
+    dinfo.section       = sec;
+    dinfo.buffer        = buf;
+    dinfo.buffer_length = size;
+    dinfo.buffer_vma    = bfd_section_vma(sec->owner, sec);
+
+    if (vma > closer_symbol_address )
+        tprintf("using section vma\n");
+    else
+        vma = closer_symbol_address;
+
+    print = false;
+    while(vma != true_offset) {
+        dinfo.insn_info_valid = 0;
+        if ((true_offset - vma) <= 8 )
+            print = true;
+
+        size = disassemble_fn(vma, &dinfo);
+        if (print)
+            tprintf("\n");
+        if(size == 0 || size == -1 ) {
+            tprintf("getting out at address %lx\n", vma);
+            break;
+        }
+        vma += size;
+    }
+
+    bfd_close(abfd);
+    free(dynsyms);
+    free(buf);
+    return NULL;
 }
 
 
@@ -2058,7 +2228,12 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
     if (addr >= cur->start_addr && addr < cur->end_addr) {
       // calculate the true offset into the binary ...
       // but still print out the original address because it can be useful too ...
-      unsigned long true_offset = addr - cur->start_addr + cur->mmap_offset;
+      unsigned long true_offset;
+      if ( cur->current_program ) 
+          true_offset = addr;
+      else
+           true_offset = addr - cur->start_addr + cur->mmap_offset;
+      get_symbol_name(cur->binary_filename, true_offset, addr);        
       tprintf(" > %s:0x%lx:0x%lx\n", cur->binary_filename, true_offset, addr);
       return; // exit early
     }
@@ -2073,6 +2248,8 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
   //perror_msg("Unable to find the mapped code in the cache");
 
 }
+
+
 
 
 /* use libunwind to unwind the stack and print a backtrace */

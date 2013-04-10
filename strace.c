@@ -744,6 +744,7 @@ droptcb(struct tcb *tcp)
     if (use_libunwind) {
         delete_mmap_cache(tcp); // pgbovine
         _UPT_destroy(tcp->libunwind_ui);  // pgbovine
+        bfd_init();
     }
 
 	memset(tcp, 0, sizeof(*tcp));
