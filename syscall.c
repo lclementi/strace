@@ -2063,6 +2063,7 @@ objdump_print_address (bfd_vma vma, struct disassemble_info *inf)
         //TODO there will not be more that 20 aliases right?
         asymbol * good_sym[20];
         int alloc_good_sym = 0;
+        //TODO consolidate the symbols in one array
         for (i = 0; i < dynsymcount; i++){
 
             if ( bfd_asymbol_value(dynsyms[i]) == vma ) {
@@ -2076,31 +2077,54 @@ objdump_print_address (bfd_vma vma, struct disassemble_info *inf)
                 alloc_good_sym++;
             }
         }
-        tprintf(" 0x%lx ", vma);
+        //print into the buffer
+        (*inf->fprintf_func) (inf->stream, " 0x%lx ", vma);
+
+
+
         //we have all the good symbols
         for (i = 0; i < alloc_good_sym; i++){
-            tprintf("%s,", good_sym[i]->name );
+            (*inf->fprintf_func) (inf->stream, "%s,", good_sym[i]->name );
         }
     }//if
 }
 
 
-int 
-custom_fprintf(void * stream, const char * format, ...)
+/* Pseudo FILE object for strings.  */
+typedef struct
 {
-    /* silly amount */
-    char    str[128] = {0};
-    int rv = 0;
+   char *buffer;
+   size_t pos;
+   size_t alloc;
+} SFILE;
+
+
+
+int 
+custom_fprintf(SFILE * f, const char * format, ...)
+{
+    size_t n = 0;
     va_list args;
 
     if (print) {
-        va_start(args, format);
-        rv = vsnprintf(str, ARRAY_SIZE(str) - 1, format, args);
-        va_end(args);
 
-        tprintf("%s", str);
+        while (1)
+        {
+            size_t space = f->alloc - f->pos;
+            va_start (args, format);
+            n = vsnprintf (f->buffer + f->pos, space, format, args);
+            va_end (args);
+            if (space > n)
+                break;
+
+            f->alloc = (f->alloc + n) * 2;
+            f->buffer = (char *) realloc (f->buffer, f->alloc);
+            if ( ! f->buffer )
+                perror_msg_and_die("Error extending print buffer");
+        }
+        f->pos += n;
     }
-    return rv;
+    return n;
 }
 
 
@@ -2108,11 +2132,22 @@ custom_fprintf(void * stream, const char * format, ...)
 char * 
 get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
 {
+    SFILE sfile;
     bfd * abfd;
     ssymcount = 0, dynsymcount = 0, synthcount = 0;
     ssyms = NULL, dynsyms = NULL, synthsyms = NULL;
 
-    tprintf("filename: %s addr: %lx\n", filename, true_offset);
+    //tprintf("filename: %s addr: %lx\n", filename, true_offset);
+
+
+    //TODO allocate this buffer only once at the beginning of the program
+    sfile.alloc = 120;
+    sfile.buffer = (char *) malloc (sfile.alloc);
+    if ( ! sfile.buffer)
+        perror_msg_and_die("Can not get memory for internal buffer");
+    sfile.pos = 0;
+
+
     //try to open file
     if ((abfd = bfd_openr(filename, NULL)) == NULL) {
         perror_msg_and_die("unable to open %s", filename);
@@ -2141,9 +2176,7 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     synthcount = bfd_get_synthetic_symtab (abfd, ssymcount, ssyms,
                                            dynsymcount, dynsyms, &synthsyms);
 
-    //allsymscount = dynsymcount + synthcount + ssymcount;
-    //allsyms = (asymbol **) malloc( allsymscount * sizeof(asymbol **)  )
-
+    //TODO unify the buffers
 
     disassembler_ftype disassemble_fn = disassembler (abfd);
     if ( ! disassemble_fn ) 
@@ -2166,7 +2199,7 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     }
 
 
-    tprintf("Starting disassebly at %lx with name %s\n", closer_symbol_address, closer_symbol_name);
+    //tprintf("Starting disassebly at %lx with name %s\n", closer_symbol_address, closer_symbol_name);
 
 
     unsigned long vma ;
@@ -2180,6 +2213,7 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     dinfo.arch    = bfd_get_arch(abfd);
     dinfo.mach    = bfd_get_mach(abfd);
     dinfo.endian  = abfd->xvec->byteorder;
+    dinfo.stream  = &sfile;
     dinfo.print_address_func = objdump_print_address;
     disassemble_init_for_target(&dinfo);
 
@@ -2229,16 +2263,20 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
         if ((true_offset - vma) <= 9 ) {
             //TODO find a better way to understand the off set to the next instruction
             print = 1;
-            //tprintf("%lx  ", vma);
         }
         size = disassemble_fn(vma, &dinfo);
-        if (print)
-            tprintf("\n");
         if(size == 0 || size == -1 ) {
-            tprintf("getting out at address %lx\n", vma);
+            perror_msg_and_die("Disassembler terminated abnormally at address %lx on file %s\n", vma, filename);
             break;
         }
+
         vma += size;
+        if (print && (vma != true_offset) ){
+            //tprintf("%s\n", sfile.buffer);
+            sfile.pos = 0;
+        }
+
+
     }
 
     bfd_close(abfd);
@@ -2248,8 +2286,9 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
         free(synthsyms);
     if ( dynsyms )
         free(dynsyms);
+    //free(sfile.buffer);
     free(buf);
-    return NULL;
+    return sfile.buffer;
 }
 
 
@@ -2270,6 +2309,7 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
   // that contains addr
   int lower = 0;
   int upper = tcp->mmap_cache_size;
+  char * symbol_name;
 
   while (lower <= upper) {
     int mid = (int)((upper + lower) / 2);
@@ -2283,8 +2323,13 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
           true_offset = addr;
       else
            true_offset = addr - cur->start_addr + cur->mmap_offset;
-      get_symbol_name(cur->binary_filename, true_offset, addr);        
-      tprintf(" > %s:0x%lx:0x%lx\n", cur->binary_filename, true_offset, addr);
+      symbol_name = get_symbol_name(cur->binary_filename, true_offset, addr);
+      if ( symbol_name ){
+        tprintf(" > %s:0x%lx:0x%lx %s\n", cur->binary_filename, true_offset, addr, symbol_name);
+        free(symbol_name);
+      }
+      else
+        tprintf(" > %s:0x%lx:0x%lx\n", cur->binary_filename, true_offset, addr);
       return; // exit early
     }
     else if (addr < cur->start_addr) {
