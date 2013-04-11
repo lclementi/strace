@@ -2053,6 +2053,16 @@ static asymbol **ssyms;
 static asymbol *synthsyms;
 static long dynsymcount, synthcount, ssymcount;
 
+
+/* Pseudo FILE object for strings.  */
+typedef struct
+{
+   char *buffer;
+   size_t pos;
+   size_t alloc;
+} SFILE;
+
+
 int print;
 
 static void
@@ -2077,26 +2087,24 @@ objdump_print_address (bfd_vma vma, struct disassemble_info *inf)
                 alloc_good_sym++;
             }
         }
-        //print into the buffer
-        (*inf->fprintf_func) (inf->stream, " 0x%lx ", vma);
+        //print the address into the buffer
+        //(*inf->fprintf_func) (inf->stream, " 0x%lx ", vma);
+        //
+        ((SFILE *)inf->stream)->pos = 0;
 
 
-
+        (*inf->fprintf_func) (inf->stream, "[");
         //we have all the good symbols
-        for (i = 0; i < alloc_good_sym; i++){
-            (*inf->fprintf_func) (inf->stream, "%s,", good_sym[i]->name );
-        }
+        if ( alloc_good_sym > 0 ) 
+            for (i = 0; i < alloc_good_sym; i++){
+                (*inf->fprintf_func) (inf->stream, "%s,", good_sym[i]->name );
+            }
+        else 
+            (*inf->fprintf_func) (inf->stream, "unknown");
+        (*inf->fprintf_func) (inf->stream, "]");
     }//if
 }
 
-
-/* Pseudo FILE object for strings.  */
-typedef struct
-{
-   char *buffer;
-   size_t pos;
-   size_t alloc;
-} SFILE;
 
 
 
@@ -2199,9 +2207,6 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     }
 
 
-    //tprintf("Starting disassebly at %lx with name %s\n", closer_symbol_address, closer_symbol_name);
-
-
     unsigned long vma ;
     int size;
     disassemble_info dinfo;
@@ -2251,6 +2256,8 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     dinfo.buffer        = buf;
     dinfo.buffer_length = size;
     dinfo.buffer_vma    = bfd_section_vma(sec->owner, sec);
+
+    //tprintf("section vma %lx\n", sec->vma - sec->filepos );
 
     //the beginning of the section is closer that the symbol
     if (vma < closer_symbol_address )
@@ -2325,11 +2332,11 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
            true_offset = addr - cur->start_addr + cur->mmap_offset;
       symbol_name = get_symbol_name(cur->binary_filename, true_offset, addr);
       if ( symbol_name ){
-        tprintf(" > %s:0x%lx:0x%lx %s\n", cur->binary_filename, true_offset, addr, symbol_name);
+        tprintf(" > %s:0x%lx %s\n", cur->binary_filename, true_offset, symbol_name);
         free(symbol_name);
       }
       else
-        tprintf(" > %s:0x%lx:0x%lx\n", cur->binary_filename, true_offset, addr);
+        tprintf(" > %s:0x%lx\n", cur->binary_filename, true_offset);
       return; // exit early
     }
     else if (addr < cur->start_addr) {
