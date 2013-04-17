@@ -2257,7 +2257,9 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     dinfo.buffer_length = size;
     dinfo.buffer_vma    = bfd_section_vma(sec->owner, sec);
 
-    //tprintf("section vma %lx\n", sec->vma - sec->filepos );
+    //TODO add this
+
+    tprintf("section vma %lx true_offset %lx\n", sec->vma - sec->filepos, true_offset );
 
     //the beginning of the section is closer that the symbol
     if (vma < closer_symbol_address )
@@ -2326,8 +2328,10 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
       // calculate the true offset into the binary ...
       // but still print out the original address because it can be useful too ...
       unsigned long true_offset;
-      if ( cur->current_program ) 
+      if ( cur->current_program ) {
+          tprintf(" - ");
           true_offset = addr;
+      }
       else
            true_offset = addr - cur->start_addr + cur->mmap_offset;
       symbol_name = get_symbol_name(cur->binary_filename, true_offset, addr);
@@ -2347,7 +2351,7 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
     }
   }
   //TODO find a better way to handle this
-  //perror_msg("Unable to find the mapped code in the cache");
+  tprintf(" > Unmapped_memory_area:0x%lx\n", addr);
 
 }
 
@@ -2356,27 +2360,27 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
 
 /* use libunwind to unwind the stack and print a backtrace */
 void print_libunwind_backtrace(struct tcb* tcp) {
-  unw_word_t ip;
-  int n = 0, ret;
-  unw_cursor_t c;
-
-  extern unw_addr_space_t libunwind_as;
-  if (unw_init_remote(&c, libunwind_as, tcp->libunwind_ui) < 0)
-      perror_msg_and_die("Unable to initiate libunwind");
-  do {
-    if (unw_get_reg(&c, UNW_REG_IP, &ip) < 0)
-        perror_msg_and_die("Unable to walk the stack of process %d", tcp->pid);
-
-    print_normalized_addr(tcp, ip);
-
-    ret = unw_step(&c);
-
-    if (++n > 255) {
-      /* guard against bad unwind info in old libraries... */
-      perror_msg("libunwind warning: too deeply nested---assuming bogus unwind\n");
-      break;
-    }
-  } while (ret > 0);
+    unw_word_t ip;
+    int n = 0, ret;
+    unw_cursor_t c;
+  
+    extern unw_addr_space_t libunwind_as;
+    if (unw_init_remote(&c, libunwind_as, tcp->libunwind_ui) < 0)
+        perror_msg_and_die("Unable to initiate libunwind");
+    do {
+        if (unw_get_reg(&c, UNW_REG_IP, &ip) < 0)
+            perror_msg_and_die("Unable to walk the stack of process %d", tcp->pid);
+  
+        print_normalized_addr(tcp, ip);
+  
+        ret = unw_step(&c);
+  
+        if (++n > 255) {
+            /* guard against bad unwind info in old libraries... */
+            perror_msg("libunwind warning: too deeply nested---assuming bogus unwind\n");
+            break;
+        }
+    } while (ret > 0);
 }
 #endif
 
