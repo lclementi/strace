@@ -2010,18 +2010,6 @@ void alloc_mmap_cache(struct tcb* tcp) {
               perror_msg_and_die("Overlaying memory region in %s", filename);
         }
 
-        //TODO man readlink implement proper checking 
-        size_t size;
-        sprintf(filename, "/proc/%d/exe", tcp->pid);
-        if ( ! (size = readlink(filename, s, 300)) )
-                perror_msg_and_die("Unable to read process /proc/PID/exe");
-        s[size] = '\0';//null terminating the string
-
-        if ( strcmp(s, binary_path) == 0 )
-            cur_entry->current_program = 1; //true
-        else
-            cur_entry->current_program = 0;
-  
         tcp->mmap_cache_size++;
   
         // resize:
@@ -2138,7 +2126,7 @@ custom_fprintf(SFILE * f, const char * format, ...)
 
 
 char * 
-get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
+get_symbol_name(char * filename, unsigned long true_offset)
 {
     SFILE sfile;
     bfd * abfd;
@@ -2183,13 +2171,36 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
         dynsymcount = bfd_canonicalize_dynamic_symtab (abfd, dynsyms);
     synthcount = bfd_get_synthetic_symtab (abfd, ssymcount, ssyms,
                                            dynsymcount, dynsyms, &synthsyms);
-
     //TODO unify the buffers
 
-    disassembler_ftype disassemble_fn = disassembler (abfd);
-    if ( ! disassemble_fn ) 
-        perror_msg_and_die("Can not initialize disassebler");
 
+    //find the section we need to disassemble
+    int found_it = 0; //false
+    asection * sec;
+    unsigned long vma, load_address ;
+    int size;
+    for (sec = abfd->sections; sec != NULL; sec = sec->next){
+        // for binary file we need to add the load address of this section 
+        // (for shared libraries it will be 0 since they are relocatable)
+        load_address = (sec->vma - sec->filepos) + true_offset;
+
+        vma = bfd_get_section_vma(abfd, sec);
+        if (load_address < vma){
+                continue;
+        }
+        size = bfd_section_size(abfd, sec);
+        
+        if (load_address <= vma + size){
+            //ok load_address is within vma and vma + size
+            found_it = 1; //true
+            break;
+        }
+    }//for
+    if ( ! found_it ) 
+        perror_msg_and_die("Unable to find the proper section.");
+
+
+    //find the closest symbol
     int i;
     unsigned long closer_symbol_address = 0;
     unsigned long current_address = 0;
@@ -2198,7 +2209,7 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
         //find the closest symbol going backwards
         current_address = bfd_asymbol_value(dynsyms[i]);
 
-        if ( (current_address < true_offset) &&
+        if ( (current_address < load_address) &&
               ( current_address > closer_symbol_address) ){
             //we found a new start address
             closer_symbol_address = current_address;
@@ -2207,10 +2218,12 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     }
 
 
-    unsigned long vma ;
-    int size;
+    //startup the disassembler
+    disassembler_ftype disassemble_fn = disassembler (abfd);
+    if ( ! disassemble_fn ) 
+        perror_msg_and_die("Can not initialize disassebler");
+
     disassemble_info dinfo;
-    asection * sec;
 
     //initialize the dinfo data structure
     init_disassemble_info(&dinfo, NULL, custom_fprintf);
@@ -2223,25 +2236,6 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
     disassemble_init_for_target(&dinfo);
 
 
-    //find the section we need to disassemble
-    int found_it = 0; //false
-    for (sec = abfd->sections; sec != NULL; sec = sec->next){
-
-        vma = bfd_get_section_vma(abfd, sec);
-        if (true_offset < vma){
-                continue;
-        }
-        size = bfd_section_size(abfd, sec);
-        
-        if (true_offset <= vma + size){
-            //ok true_offset is within vma and vma + size
-            found_it = 1; //true
-            break;
-        }
-    }//for
-
-    if ( ! found_it ) 
-        perror_msg_and_die("Unable to find the proper section.");
 
     size = bfd_section_size(sec->owner, sec);
     unsigned char * buf  = malloc(size);
@@ -2259,17 +2253,17 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
 
     //TODO add this
 
-    tprintf("section vma %lx true_offset %lx\n", sec->vma - sec->filepos, true_offset );
+    //tprintf("section vma %lx true_offset %lx\n", sec->vma - sec->filepos, true_offset );
 
     //the beginning of the section is closer that the symbol
     if (vma < closer_symbol_address )
         vma = closer_symbol_address;
 
     print = 0;
-    while(vma != true_offset) {
+    while(vma != load_address) {
 
         dinfo.insn_info_valid = 0;
-        if ((true_offset - vma) <= 9 ) {
+        if ((load_address - vma) <= 9 ) {
             //TODO find a better way to understand the off set to the next instruction
             print = 1;
         }
@@ -2280,7 +2274,7 @@ get_symbol_name(char * filename, unsigned long true_offset, unsigned long addr)
         }
 
         vma += size;
-        if (print && (vma != true_offset) ){
+        if (print && (vma != load_address) ){
             //tprintf("%s\n", sfile.buffer);
             sfile.pos = 0;
         }
@@ -2328,13 +2322,8 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
       // calculate the true offset into the binary ...
       // but still print out the original address because it can be useful too ...
       unsigned long true_offset;
-      if ( cur->current_program ) {
-          tprintf(" - ");
-          true_offset = addr;
-      }
-      else
-           true_offset = addr - cur->start_addr + cur->mmap_offset;
-      symbol_name = get_symbol_name(cur->binary_filename, true_offset, addr);
+      true_offset = addr - cur->start_addr + cur->mmap_offset;
+      symbol_name = get_symbol_name(cur->binary_filename, true_offset);
       if ( symbol_name ){
         tprintf(" > %s:0x%lx %s\n", cur->binary_filename, true_offset, symbol_name);
         free(symbol_name);

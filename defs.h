@@ -414,8 +414,6 @@ struct mmap_cache_t {
   unsigned long end_addr;
   unsigned long mmap_offset;
   char* binary_filename;
-  //is this mmap the current program?
-  int current_program;
 };
 #endif
 
