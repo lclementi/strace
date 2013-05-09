@@ -2137,7 +2137,8 @@ get_symbol_name(char * filename, unsigned long true_offset)
 
 
     //TODO allocate this buffer only once at the beginning of the program
-    sfile.alloc = 120;
+    //TODO which size?
+    sfile.alloc = 128;
     sfile.buffer = (char *) malloc (sfile.alloc);
     if ( ! sfile.buffer)
         perror_msg_and_die("Can not get memory for internal buffer");
@@ -2146,29 +2147,29 @@ get_symbol_name(char * filename, unsigned long true_offset)
 
     //try to open file
     if ((abfd = bfd_openr(filename, NULL)) == NULL) {
-        perror_msg_and_die("unable to open %s", filename);
+        perror_msg_and_die("Unable to open %s", filename);
     }
 
     /* Read in the  symbols.  */
     bfd_check_format(abfd, bfd_object);
     //static
     int storage = bfd_get_symtab_upper_bound (abfd);
-    if (storage < 0)
-        perror_msg_and_die("Can not get storage size for static symbol");
+    if ( storage < 0 )
+        perror_msg_and_die("Unable to get storage size for static symbol");
     if ( storage )
         ssyms = (asymbol **) malloc (storage);
-        if ( ! ssyms )
-                perror_msg_and_die("Can not get storage size static symbol");
-        ssymcount = bfd_canonicalize_symtab (abfd, ssyms);
+    if ( ! ssyms )
+            perror_msg_and_die("Unable to get storage size static symbol");
+    ssymcount = bfd_canonicalize_symtab (abfd, ssyms);
     //dynamic
     storage = bfd_get_dynamic_symtab_upper_bound (abfd);
     if ( storage < 0 ) 
-        perror_msg_and_die("Can not get storage size for dynamic");
+        perror_msg_and_die("Can not get storage size for dynamic symbols table");
     if ( storage )
         dynsyms = (asymbol **) malloc (storage);
-        if ( ! dynsyms )
-            perror_msg_and_die("Can not get storage size for dynamic");
-        dynsymcount = bfd_canonicalize_dynamic_symtab (abfd, dynsyms);
+    if ( ! dynsyms )
+        perror_msg_and_die("Can not get storage size for dynamic symbols table");
+    dynsymcount = bfd_canonicalize_dynamic_symtab (abfd, dynsyms);
     synthcount = bfd_get_synthetic_symtab (abfd, ssymcount, ssyms,
                                            dynsymcount, dynsyms, &synthsyms);
     //TODO unify the buffers
@@ -2258,6 +2259,30 @@ get_symbol_name(char * filename, unsigned long true_offset)
     //the beginning of the section is closer that the symbol
     if (vma < closer_symbol_address )
         vma = closer_symbol_address;
+
+#if 0
+    long symcount;
+	int found;
+	static asymbol **syms_temp;
+	const char *filename_temp = malloc(300);
+	const char *functionname = malloc(300);
+	unsigned int line;
+    symcount = bfd_read_minisymbols(abfd, false, (PTR) & syms_temp, &size);
+    if (symcount == 0)
+        symcount = bfd_read_minisymbols(abfd, true /* dynamic */ ,
+                        (PTR) & syms_temp, &size);
+
+	//TODO figure out the type of symbols syms
+    found = bfd_find_nearest_line(abfd, sec, syms_temp,  vma,
+            &filename_temp, &functionname, &line);
+
+	if ( found )
+		tprintf("    filename %s functionname %s line %d\n", filename_temp, functionname, line);
+	else 
+		tprintf("    not found\n");
+
+	free(syms_temp);
+#endif
 
     print = 0;
     while(vma != load_address) {
