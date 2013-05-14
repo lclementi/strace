@@ -2039,7 +2039,9 @@ void delete_mmap_cache(struct tcb* tcp) {
 static asymbol **dynsyms;
 static asymbol **ssyms;
 static asymbol *synthsyms;
+static asymbol *symbols;
 static long dynsymcount, synthcount, ssymcount;
+static long symbols_count;
 
 
 /* Pseudo FILE object for strings.  */
@@ -2156,8 +2158,7 @@ get_symbol_name(char * filename, unsigned long true_offset)
     int storage = bfd_get_symtab_upper_bound (abfd);
     if ( storage < 0 )
         perror_msg_and_die("Unable to get storage size for static symbol");
-    if ( storage )
-        ssyms = (asymbol **) malloc (storage);
+    ssyms = (asymbol **) malloc (storage);
     if ( ! ssyms )
             perror_msg_and_die("Unable to get storage size static symbol");
     ssymcount = bfd_canonicalize_symtab (abfd, ssyms);
@@ -2165,14 +2166,20 @@ get_symbol_name(char * filename, unsigned long true_offset)
     storage = bfd_get_dynamic_symtab_upper_bound (abfd);
     if ( storage < 0 ) 
         perror_msg_and_die("Can not get storage size for dynamic symbols table");
-    if ( storage )
-        dynsyms = (asymbol **) malloc (storage);
+    dynsyms = (asymbol **) malloc (storage);
     if ( ! dynsyms )
         perror_msg_and_die("Can not get storage size for dynamic symbols table");
     dynsymcount = bfd_canonicalize_dynamic_symtab (abfd, dynsyms);
     synthcount = bfd_get_synthetic_symtab (abfd, ssymcount, ssyms,
                                            dynsymcount, dynsyms, &synthsyms);
+
+	//symbols_count = ssymcount + dynsymcount + synthcount;
+	//symbols = malloc(symbols_count);
+	
+
+
     //TODO unify the buffers
+	tprintf("sym %d  dynsym %d synthsym %d\n", ssymcount, dynsymcount, synthcount);
 
 
     //find the section we need to disassemble
