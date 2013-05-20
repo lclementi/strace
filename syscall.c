@@ -2177,9 +2177,8 @@ get_symbol_name(char * filename, unsigned long true_offset)
 	//symbols = malloc(symbols_count);
 	
 
-
     //TODO unify the buffers
-	tprintf("sym %d  dynsym %d synthsym %d\n", ssymcount, dynsymcount, synthcount);
+//	tprintf("sym %d  dynsym %d synthsym %d\n", ssymcount, dynsymcount, synthcount);
 
 
     //find the section we need to disassemble
@@ -2381,9 +2380,10 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
 
 /* use libunwind to unwind the stack and print a backtrace */
 void print_libunwind_backtrace(struct tcb* tcp) {
-    unw_word_t ip;
+    unw_word_t ip, temp;
     int n = 0, ret;
     unw_cursor_t c;
+    char buffer[100];
   
     extern unw_addr_space_t libunwind_as;
     if (unw_init_remote(&c, libunwind_as, tcp->libunwind_ui) < 0)
@@ -2392,6 +2392,14 @@ void print_libunwind_backtrace(struct tcb* tcp) {
         if (unw_get_reg(&c, UNW_REG_IP, &ip) < 0)
             perror_msg_and_die("Unable to walk the stack of process %d", tcp->pid);
   
+        //TODO Libunwind http://www.nongnu.org/libunwind/man/unw_create_addr_space(3).html#section_12
+        buffer[0] = NULL;
+        //if( unw_get_proc_name(&c, buffer, 100, &temp) )
+        //perror_msg_and_die("failing to get proc_name");
+        unw_get_proc_name(&c, buffer, 100, &temp); 
+
+        tprintf("proc_name %s\n", buffer);
+
         print_normalized_addr(tcp, ip);
   
         ret = unw_step(&c);
