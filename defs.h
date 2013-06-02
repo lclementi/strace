@@ -396,8 +396,6 @@ typedef struct ioctlent {
 #define LIB_UNWIND
 #ifdef LIB_UNWIND
 #include "libunwind-ptrace.h"
-#include <bfd.h>
-#include <dis-asm.h>
 
 /* keep a sorted array of cache entries, so that we can binary search
  * through it
