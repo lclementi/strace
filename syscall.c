@@ -2045,6 +2045,7 @@ void delete_mmap_cache(struct tcb* tcp) {
  */
 static void print_normalized_addr(struct tcb* tcp, unsigned long addr, unw_cursor_t cursor) {
   if (!tcp->mmap_cache)
+      // check ../libunwind/src/coredump/_UCD_get_proc_name.c
       perror_msg_and_die("Memory maps cache is empty");
 
 
@@ -2052,7 +2053,7 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr, unw_curso
   // that contains addr
   int lower = 0;
   int upper = tcp->mmap_cache_size;
-  int symbol_name_size = 40;
+  int symbol_name_size = 40, ret_val;
   char * symbol_name;
   unw_word_t function_off_set;
 
@@ -2067,23 +2068,32 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr, unw_curso
       if ( !symbol_name )
         perror_msg_and_die("Unable to allocate memory to hold the symbol name");
       symbol_name[0] = '\0';
-      //if( unw_get_proc_name(&c, buffer, 100, &temp) )
-      //perror_msg_and_die("failing to get proc_name");
-      unw_get_proc_name(&cursor, symbol_name, symbol_name_size, &function_off_set); 
-
-/*
-Obtained 5 stack frames.
-./a.out() [0x40063d]
-./a.out() [0x4006bb]
-./a.out() [0x4006c6]
-/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0xed) [0x7fa2f8a5976d]
-./a.out() [0x400569]
-*/
+      ret_val = unw_get_proc_name(&cursor, symbol_name, symbol_name_size, &function_off_set); 
+      while ( ret_val == -UNW_ENOMEM ) {
+        //TODO remove this print
+        tprintf("Increasing size of symbol buffer\n");
+        symbol_name_size *= 2;
+        symbol_name = realloc(symbol_name, symbol_name_size);
+        if ( !symbol_name )
+          perror_msg_and_die("Unable to allocate memory to hold the symbol name");
+        symbol_name[0] = '\0';
+        ret_val = unw_get_proc_name(&cursor, symbol_name, symbol_name_size, &function_off_set);
+      }
 
       unsigned long true_offset;
       true_offset = addr - cur->start_addr + cur->mmap_offset;
       if ( symbol_name[0] ){
-        tprintf(" > %s(%s) [0x%lx]\n", cur->binary_filename, symbol_name, true_offset);
+        /*
+         * we want to keep the format used by backtrace_symbols from the glibc
+         * 
+         * ./a.out() [0x40063d]
+         * ./a.out() [0x4006bb]
+         * ./a.out() [0x4006c6]
+         * /lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0xed) [0x7fa2f8a5976d]
+         * ./a.out() [0x400569]
+         */
+
+        tprintf(" > %s(%s+0x%lx) [0x%lx]\n", cur->binary_filename, symbol_name, function_off_set, true_offset);
       }
       else
         tprintf(" > %s() [0x%lx]\n", cur->binary_filename, true_offset);
@@ -2106,7 +2116,7 @@ Obtained 5 stack frames.
 
 /* use libunwind to unwind the stack and print a backtrace */
 void print_libunwind_backtrace(struct tcb* tcp) {
-    unw_word_t ip, temp;
+    unw_word_t ip;
     int n = 0, ret;
     unw_cursor_t c;
   
