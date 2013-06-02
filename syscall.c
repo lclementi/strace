@@ -2035,297 +2035,6 @@ void delete_mmap_cache(struct tcb* tcp) {
 }
 
 
-#include <stdarg.h>
-static asymbol **dynsyms;
-static asymbol **ssyms;
-static asymbol *synthsyms;
-static asymbol *symbols;
-static long dynsymcount, synthcount, ssymcount;
-static long symbols_count;
-
-
-/* Pseudo FILE object for strings.  */
-typedef struct
-{
-   char *buffer;
-   size_t pos;
-   size_t alloc;
-} SFILE;
-
-
-int print;
-
-static void
-objdump_print_address (bfd_vma vma, struct disassemble_info *inf)
-{
-    if ( print ){
-        int i;
-        //TODO there will not be more that 20 aliases right?
-        asymbol * good_sym[20];
-        int alloc_good_sym = 0;
-        //TODO consolidate the symbols in one array
-        for (i = 0; i < dynsymcount; i++){
-
-            if ( bfd_asymbol_value(dynsyms[i]) == vma ) {
-                good_sym[alloc_good_sym] = dynsyms[i];
-                alloc_good_sym++;
-            }
-        }
-        for (i = 0; i < synthcount; i++){
-            if ( bfd_asymbol_value(synthsyms + i) == vma ) {
-                good_sym[alloc_good_sym] = synthsyms + i;
-                alloc_good_sym++;
-            }
-        }
-        //print the address into the buffer
-        //(*inf->fprintf_func) (inf->stream, " 0x%lx ", vma);
-        //
-        ((SFILE *)inf->stream)->pos = 0;
-
-
-        (*inf->fprintf_func) (inf->stream, "[");
-        //we have all the good symbols
-        if ( alloc_good_sym > 0 ) 
-            for (i = 0; i < alloc_good_sym; i++){
-                (*inf->fprintf_func) (inf->stream, "%s,", good_sym[i]->name );
-            }
-        else 
-            (*inf->fprintf_func) (inf->stream, "unknown");
-        (*inf->fprintf_func) (inf->stream, "]");
-    }//if
-}
-
-
-
-
-int 
-custom_fprintf(SFILE * f, const char * format, ...)
-{
-    size_t n = 0;
-    va_list args;
-
-    if (print) {
-
-        while (1)
-        {
-            size_t space = f->alloc - f->pos;
-            va_start (args, format);
-            n = vsnprintf (f->buffer + f->pos, space, format, args);
-            va_end (args);
-            if (space > n)
-                break;
-
-            f->alloc = (f->alloc + n) * 2;
-            f->buffer = (char *) realloc (f->buffer, f->alloc);
-            if ( ! f->buffer )
-                perror_msg_and_die("Error extending print buffer");
-        }
-        f->pos += n;
-    }
-    return n;
-}
-
-
-
-char * 
-get_symbol_name(char * filename, unsigned long true_offset)
-{
-    SFILE sfile;
-    bfd * abfd;
-    ssymcount = 0, dynsymcount = 0, synthcount = 0;
-    ssyms = NULL, dynsyms = NULL, synthsyms = NULL;
-
-    //tprintf("filename: %s addr: %lx\n", filename, true_offset);
-
-
-    //TODO allocate this buffer only once at the beginning of the program
-    //TODO which size?
-    sfile.alloc = 128;
-    sfile.buffer = (char *) malloc (sfile.alloc);
-    if ( ! sfile.buffer)
-        perror_msg_and_die("Can not get memory for internal buffer");
-    sfile.pos = 0;
-
-
-    //try to open file
-    if ((abfd = bfd_openr(filename, NULL)) == NULL) {
-        perror_msg_and_die("Unable to open %s", filename);
-    }
-
-    /* Read in the  symbols.  */
-    bfd_check_format(abfd, bfd_object);
-    //static
-    int storage = bfd_get_symtab_upper_bound (abfd);
-    if ( storage < 0 )
-        perror_msg_and_die("Unable to get storage size for static symbol");
-    ssyms = (asymbol **) malloc (storage);
-    if ( ! ssyms )
-            perror_msg_and_die("Unable to get storage size static symbol");
-    ssymcount = bfd_canonicalize_symtab (abfd, ssyms);
-    //dynamic
-    storage = bfd_get_dynamic_symtab_upper_bound (abfd);
-    if ( storage < 0 ) 
-        perror_msg_and_die("Can not get storage size for dynamic symbols table");
-    dynsyms = (asymbol **) malloc (storage);
-    if ( ! dynsyms )
-        perror_msg_and_die("Can not get storage size for dynamic symbols table");
-    dynsymcount = bfd_canonicalize_dynamic_symtab (abfd, dynsyms);
-    synthcount = bfd_get_synthetic_symtab (abfd, ssymcount, ssyms,
-                                           dynsymcount, dynsyms, &synthsyms);
-
-	//symbols_count = ssymcount + dynsymcount + synthcount;
-	//symbols = malloc(symbols_count);
-	
-
-    //TODO unify the buffers
-//	tprintf("sym %d  dynsym %d synthsym %d\n", ssymcount, dynsymcount, synthcount);
-
-
-    //find the section we need to disassemble
-    int found_it = 0; //false
-    asection * sec;
-    unsigned long vma, load_address ;
-    int size;
-    for (sec = abfd->sections; sec != NULL; sec = sec->next){
-        // for binary file we need to add the load address of this section 
-        // (for shared libraries it will be 0 since they are relocatable)
-        load_address = (sec->vma - sec->filepos) + true_offset;
-
-        vma = bfd_get_section_vma(abfd, sec);
-        if (load_address < vma){
-                continue;
-        }
-        size = bfd_section_size(abfd, sec);
-        
-        if (load_address <= vma + size){
-            //ok load_address is within vma and vma + size
-            found_it = 1; //true
-            break;
-        }
-    }//for
-    if ( ! found_it ) 
-        perror_msg_and_die("Unable to find the proper section.");
-
-
-    //find the closest symbol
-    int i;
-    unsigned long closer_symbol_address = 0;
-    unsigned long current_address = 0;
-    char * closer_symbol_name = NULL;
-    for (i = 0; i < dynsymcount; i++){
-        //find the closest symbol going backwards
-        current_address = bfd_asymbol_value(dynsyms[i]);
-
-        if ( (current_address < load_address) &&
-              ( current_address > closer_symbol_address) ){
-            //we found a new start address
-            closer_symbol_address = current_address;
-            closer_symbol_name = dynsyms[i]->name;
-        }
-    }
-
-
-    //startup the disassembler
-    disassembler_ftype disassemble_fn = disassembler (abfd);
-    if ( ! disassemble_fn ) 
-        perror_msg_and_die("Can not initialize disassebler");
-
-    disassemble_info dinfo;
-
-    //initialize the dinfo data structure
-    init_disassemble_info(&dinfo, NULL, custom_fprintf);
-    dinfo.flavour = bfd_get_flavour(abfd);
-    dinfo.arch    = bfd_get_arch(abfd);
-    dinfo.mach    = bfd_get_mach(abfd);
-    dinfo.endian  = abfd->xvec->byteorder;
-    dinfo.stream  = &sfile;
-    dinfo.print_address_func = objdump_print_address;
-    disassemble_init_for_target(&dinfo);
-
-
-
-    size = bfd_section_size(sec->owner, sec);
-    unsigned char * buf  = malloc(size);
-    if ( ! buf ) 
-        perror_msg_and_die("Unable to allocate memory for disassembly.\n");
-
-    if(!bfd_get_section_contents(sec->owner, sec, buf, 0, size)) {
-        free(buf);
-        perror_msg_and_die("Unable to copy code from binary for disassembly.\n");
-    }
-    dinfo.section       = sec;
-    dinfo.buffer        = buf;
-    dinfo.buffer_length = size;
-    dinfo.buffer_vma    = bfd_section_vma(sec->owner, sec);
-
-    //TODO add this
-
-    //tprintf("section vma %lx true_offset %lx\n", sec->vma - sec->filepos, true_offset );
-
-    //the beginning of the section is closer that the symbol
-    if (vma < closer_symbol_address )
-        vma = closer_symbol_address;
-
-#if 0
-    long symcount;
-	int found;
-	static asymbol **syms_temp;
-	const char *filename_temp = malloc(300);
-	const char *functionname = malloc(300);
-	unsigned int line;
-    symcount = bfd_read_minisymbols(abfd, false, (PTR) & syms_temp, &size);
-    if (symcount == 0)
-        symcount = bfd_read_minisymbols(abfd, true /* dynamic */ ,
-                        (PTR) & syms_temp, &size);
-
-	//TODO figure out the type of symbols syms
-    found = bfd_find_nearest_line(abfd, sec, syms_temp,  vma,
-            &filename_temp, &functionname, &line);
-
-	if ( found )
-		tprintf("    filename %s functionname %s line %d\n", filename_temp, functionname, line);
-	else 
-		tprintf("    not found\n");
-
-	free(syms_temp);
-#endif
-
-    print = 0;
-    while(vma != load_address) {
-
-        dinfo.insn_info_valid = 0;
-        if ((load_address - vma) <= 9 ) {
-            //TODO find a better way to understand the off set to the next instruction
-            print = 1;
-        }
-        size = disassemble_fn(vma, &dinfo);
-        if(size == 0 || size == -1 ) {
-            perror_msg_and_die("Disassembler terminated abnormally at address %lx on file %s\n", vma, filename);
-            break;
-        }
-
-        vma += size;
-        if (print && (vma != load_address) ){
-            //tprintf("%s\n", sfile.buffer);
-            sfile.pos = 0;
-        }
-
-
-    }
-
-    bfd_close(abfd);
-    if ( ssyms )
-        free(ssyms);
-    if ( synthsyms )
-        free(synthsyms);
-    if ( dynsyms )
-        free(dynsyms);
-    //free(sfile.buffer);
-    free(buf);
-    return sfile.buffer;
-}
-
-
 /*
  * given a memory address addr and a pid, tprintf the following string:
  *   <absolute path to binary>:<hex address offset in that binary>:<absolute address>
@@ -2334,7 +2043,7 @@ get_symbol_name(char * filename, unsigned long true_offset)
  *
  * Pre-condition: tcp->mmap_cache is already initialized
  */
-static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
+static void print_normalized_addr(struct tcb* tcp, unsigned long addr, unw_cursor_t cursor) {
   if (!tcp->mmap_cache)
       perror_msg_and_die("Memory maps cache is empty");
 
@@ -2343,24 +2052,41 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr) {
   // that contains addr
   int lower = 0;
   int upper = tcp->mmap_cache_size;
+  int symbol_name_size = 40;
   char * symbol_name;
+  unw_word_t function_off_set;
+
 
   while (lower <= upper) {
     int mid = (int)((upper + lower) / 2);
     struct mmap_cache_t* cur = &tcp->mmap_cache[mid];
 
     if (addr >= cur->start_addr && addr < cur->end_addr) {
-      // calculate the true offset into the binary ...
-      // but still print out the original address because it can be useful too ...
+
+      symbol_name = malloc(symbol_name_size);
+      if ( !symbol_name )
+        perror_msg_and_die("Unable to allocate memory to hold the symbol name");
+      symbol_name[0] = '\0';
+      //if( unw_get_proc_name(&c, buffer, 100, &temp) )
+      //perror_msg_and_die("failing to get proc_name");
+      unw_get_proc_name(&cursor, symbol_name, symbol_name_size, &function_off_set); 
+
+/*
+Obtained 5 stack frames.
+./a.out() [0x40063d]
+./a.out() [0x4006bb]
+./a.out() [0x4006c6]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0xed) [0x7fa2f8a5976d]
+./a.out() [0x400569]
+*/
+
       unsigned long true_offset;
       true_offset = addr - cur->start_addr + cur->mmap_offset;
-      symbol_name = get_symbol_name(cur->binary_filename, true_offset);
-      if ( symbol_name ){
-        tprintf(" > %s:0x%lx %s\n", cur->binary_filename, true_offset, symbol_name);
-        free(symbol_name);
+      if ( symbol_name[0] ){
+        tprintf(" > %s(%s) [0x%lx]\n", cur->binary_filename, symbol_name, true_offset);
       }
       else
-        tprintf(" > %s:0x%lx\n", cur->binary_filename, true_offset);
+        tprintf(" > %s() [0x%lx]\n", cur->binary_filename, true_offset);
       return; // exit early
     }
     else if (addr < cur->start_addr) {
@@ -2383,7 +2109,6 @@ void print_libunwind_backtrace(struct tcb* tcp) {
     unw_word_t ip, temp;
     int n = 0, ret;
     unw_cursor_t c;
-    char buffer[100];
   
     extern unw_addr_space_t libunwind_as;
     if (unw_init_remote(&c, libunwind_as, tcp->libunwind_ui) < 0)
@@ -2392,15 +2117,7 @@ void print_libunwind_backtrace(struct tcb* tcp) {
         if (unw_get_reg(&c, UNW_REG_IP, &ip) < 0)
             perror_msg_and_die("Unable to walk the stack of process %d", tcp->pid);
   
-        //TODO Libunwind http://www.nongnu.org/libunwind/man/unw_create_addr_space(3).html#section_12
-        buffer[0] = NULL;
-        //if( unw_get_proc_name(&c, buffer, 100, &temp) )
-        //perror_msg_and_die("failing to get proc_name");
-        unw_get_proc_name(&c, buffer, 100, &temp); 
-
-        tprintf("proc_name %s\n", buffer);
-
-        print_normalized_addr(tcp, ip);
+        print_normalized_addr(tcp, ip, c);
   
         ret = unw_step(&c);
   
