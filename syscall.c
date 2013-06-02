@@ -1963,8 +1963,8 @@ void alloc_mmap_cache(struct tcb* tcp) {
     // dynamically expand as needed
     int cur_array_size = 10;
     struct mmap_cache_t* cache_head = malloc(cur_array_size * sizeof(*cache_head));
-  
-    char filename[30];
+    char filename[sizeof ("/proc/0123456789/maps")];
+
     sprintf(filename, "/proc/%d/maps", tcp->pid);
   
     FILE* f = fopen(filename, "r");
