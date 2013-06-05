@@ -174,10 +174,11 @@ static const struct xlat mmap_flags[] = {
 static int
 print_mmap(struct tcb *tcp, long *u_arg, unsigned long long offset)
 {
-
 	if (entering(tcp)) {
-        /* clean the cache */
-        delete_mmap_cache(tcp);
+#ifdef LIB_UNWIND
+		/* clean the cache */
+		delete_mmap_cache(tcp);
+#endif
 		/* addr */
 		if (!u_arg[0])
 			tprints("NULL, ");
@@ -201,7 +202,6 @@ print_mmap(struct tcb *tcp, long *u_arg, unsigned long long offset)
 		/* offset */
 		tprintf(", %#llx", offset);
 	}
-
 	return RVAL_HEX;
 }
 
@@ -308,12 +308,10 @@ sys_munmap(struct tcb *tcp)
 		tprintf("%#lx, %lu",
 			tcp->u_arg[0], tcp->u_arg[1]);
 	}
-
-  // pgbovine
-  if (!entering(tcp)) {
-    delete_mmap_cache(tcp);
-  }
-
+#ifdef LIB_UNWIND
+	if (!entering(tcp))
+		delete_mmap_cache(tcp);
+#endif
 	return 0;
 }
 
@@ -325,12 +323,10 @@ sys_mprotect(struct tcb *tcp)
 			tcp->u_arg[0], tcp->u_arg[1]);
 		printflags(mmap_prot, tcp->u_arg[2], "PROT_???");
 	}
-
-  // pgbovine
-  if (!entering(tcp)) {
-    delete_mmap_cache(tcp);
-  }
-
+#ifdef LIB_UNWIND
+	if (!entering(tcp))
+		delete_mmap_cache(tcp);
+#endif
 	return 0;
 }
 
