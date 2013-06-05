@@ -1197,12 +1197,10 @@ sys_waitid(struct tcb *tcp)
 				printrusage(tcp, tcp->u_arg[4]);
 		}
 	}
-
-  // pgbovine
-  if (!entering(tcp)) {
-    delete_mmap_cache(tcp);
-  }
-
+#ifdef LIB_UNWIND
+	if (!entering(tcp))
+		delete_mmap_cache(tcp);
+#endif
 	return 0;
 }
 
