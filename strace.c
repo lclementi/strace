@@ -85,10 +85,6 @@ static bool iflag = 0;
 static bool rflag = 0;
 static bool print_pid_pfx = 0;
 
-//stack trace yes or not 
-//TODO change the name 
-unw_addr_space_t libunwind_as;
-
 /* -I n */
 enum {
     INTR_NOT_SET        = 0,
@@ -195,10 +191,14 @@ strerror(int err_no)
 #endif /* HAVE_STERRROR */
 
 
+#ifdef LIB_UNWIND
 // pgbovine - if this is 0, then use a manual stack walking technique rather
 // than libunwind, which is FASTER but requires a frame pointer to exist in ALL
 // user and library code.  Set to 1 by default.
 int use_libunwind = 0;
+//stack trace yes or not 
+unw_addr_space_t libunwind_as;
+#endif
 
 
 static void
@@ -698,11 +698,13 @@ alloctcb(int pid)
 			tcp->currpers = current_personality;
 #endif
 
-            tcp->mmap_cache = NULL; // pgbovine
-            tcp->mmap_cache_size = 0; // pgbovine
-            if (use_libunwind) {
-              tcp->libunwind_ui = _UPT_create(tcp->pid); // pgbovine
-            }
+#ifdef LIB_UNWIND
+			tcp->mmap_cache = NULL;
+			tcp->mmap_cache_size = 0;
+			if (use_libunwind) {
+				tcp->libunwind_ui = _UPT_create(tcp->pid);
+			}
+#endif
 
 			nprocs++;
 			if (debug_flag)
@@ -740,13 +742,12 @@ droptcb(struct tcb *tcp)
 	if (printing_tcp == tcp)
 		printing_tcp = NULL;
 
-    //clem
-    if (use_libunwind) {
-        delete_mmap_cache(tcp); // pgbovine
-        _UPT_destroy(tcp->libunwind_ui);  // pgbovine
-        bfd_init();
-    }
-
+#ifdef LIB_UNWIND
+	if (use_libunwind) {
+		delete_mmap_cache(tcp);
+		_UPT_destroy(tcp->libunwind_ui);
+	}
+#endif
 	memset(tcp, 0, sizeof(*tcp));
 }
 
@@ -1706,9 +1707,11 @@ init(int argc, char *argv[])
 		case 'u':
 			username = strdup(optarg);
 			break;
+#ifdef LIB_UNWIND
 		case 'w':
 			use_libunwind = 1;
 			break;
+#endif
 		case 'E':
 			if (putenv(optarg) < 0)
 				die_out_of_memory();
@@ -1740,15 +1743,15 @@ init(int argc, char *argv[])
 		error_msg_and_die("-D and -p are mutually exclusive");
 	}
 
-    // pgbovine - libunwind support:
-    if (use_libunwind) {
-      libunwind_as = unw_create_addr_space (&_UPT_accessors, 0);
-      if (!libunwind_as) {
-        fprintf(stderr, "Fatal error: unw_create_addr_space() from libunwind failed\n");
-        exit(1);
-      }
-    }
-
+#ifdef LIB_UNWIND
+	if (use_libunwind) {
+	    libunwind_as = unw_create_addr_space (&_UPT_accessors, 0);
+	    if (!libunwind_as) {
+		fprintf(stderr, "Fatal error: unw_create_addr_space() from libunwind failed\n");
+		exit(1);
+	    }
+	}
+#endif
 
 	if (!followfork)
 		followfork = optF;
