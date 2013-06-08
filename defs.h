@@ -393,7 +393,6 @@ typedef struct ioctlent {
 } struct_ioctlent;
 
 
-#define LIB_UNWIND
 #ifdef LIB_UNWIND
 #include <libunwind-ptrace.h>
 #include <libunwind.h>
