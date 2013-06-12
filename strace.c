@@ -192,11 +192,9 @@ strerror(int err_no)
 
 
 #ifdef LIB_UNWIND
-// pgbovine - if this is 0, then use a manual stack walking technique rather
-// than libunwind, which is FASTER but requires a frame pointer to exist in ALL
-// user and library code.  Set to 1 by default.
+/* if this is 1, then do the stack trace for every system call
+ */
 int use_libunwind = 0;
-//stack trace yes or not 
 unw_addr_space_t libunwind_as;
 #endif
 
@@ -242,8 +240,11 @@ usage: strace [-CdffhiqrtttTvVxxy] [-I n] [-e expr]...\n\
 -E var=val -- put var=val in the environment for command\n\
 -E var -- remove var from the environment for command\n\
 -P path -- trace accesses to path\n\
--w obtain stack trace between each syscall\n\
 "
+#ifdef LIB_UNWIND
+"-k obtain stack trace between each syscall\n\
+"
+#endif
 /* ancient, no one should use it
 -F -- attempt to follow vforks (deprecated, use -f)\n\
  */
@@ -1604,7 +1605,10 @@ init(int argc, char *argv[])
 #endif
 	qualify("signal=all");
 	while ((c = getopt(argc, argv,
-		"+b:cCdfFhiqrtTvVxyzw"
+		"+b:cCdfFhiqrtTvVxyz"
+#ifdef LIB_UNWIND
+		"k"
+#endif
 		"D"
 		"a:e:o:O:p:s:S:u:E:P:I:")) != EOF) {
 		switch (c) {
@@ -1708,7 +1712,7 @@ init(int argc, char *argv[])
 			username = strdup(optarg);
 			break;
 #ifdef LIB_UNWIND
-		case 'w':
+		case 'k':
 			use_libunwind = 1;
 			break;
 #endif
@@ -1745,11 +1749,10 @@ init(int argc, char *argv[])
 
 #ifdef LIB_UNWIND
 	if (use_libunwind) {
-	    libunwind_as = unw_create_addr_space (&_UPT_accessors, 0);
-	    if (!libunwind_as) {
-		fprintf(stderr, "Fatal error: unw_create_addr_space() from libunwind failed\n");
-		exit(1);
-	    }
+		libunwind_as = unw_create_addr_space (&_UPT_accessors, 0);
+		if (!libunwind_as) {
+			error_msg_and_die("Fatal error: unable to create address space for stack tracing\n");
+		}
 	}
 #endif
 

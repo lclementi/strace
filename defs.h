@@ -742,7 +742,7 @@ extern void tv_div(struct timeval *, struct timeval *, int);
 
 #ifdef LIB_UNWIND
 /**
- * print stack (-w flag) memory allocation and deallocation
+ * print stack (-k flag) memory allocation and deallocation
  */
 extern void alloc_mmap_cache(struct tcb* tcp);
 extern void delete_mmap_cache(struct tcb* tcp);
