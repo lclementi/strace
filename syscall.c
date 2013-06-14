@@ -2041,12 +2041,7 @@ void delete_mmap_cache(struct tcb* tcp) {
  *
  * Pre-condition: tcp->mmap_cache is already initialized
  */
-static void print_normalized_addr(struct tcb* tcp, unsigned long addr, unw_cursor_t cursor) {
-  if (!tcp->mmap_cache)
-      // check ../libunwind/src/coredump/_UCD_get_proc_name.c
-      perror_msg_and_die("Memory maps cache is empty");
-
-
+static void print_normalized_addr(struct tcb* tcp, unsigned long ip, unw_cursor_t cursor) {
   // since tcp->mmap_cache is sorted, do a binary search to find the cache entry
   // that contains addr
   int lower = 0;
@@ -2055,12 +2050,11 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr, unw_curso
   char * symbol_name;
   unw_word_t function_off_set;
 
-
   while (lower <= upper) {
     int mid = (int)((upper + lower) / 2);
     struct mmap_cache_t* cur = &tcp->mmap_cache[mid];
 
-    if (addr >= cur->start_addr && addr < cur->end_addr) {
+    if (ip >= cur->start_addr && ip < cur->end_addr) {
 
       symbol_name = malloc(symbol_name_size);
       if ( !symbol_name )
@@ -2079,7 +2073,7 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr, unw_curso
       }
 
       unsigned long true_offset;
-      true_offset = addr - cur->start_addr + cur->mmap_offset;
+      true_offset = ip - cur->start_addr + cur->mmap_offset;
       if ( symbol_name[0] ){
         /*
          * we want to keep the format used by backtrace_symbols from the glibc
@@ -2097,7 +2091,7 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr, unw_curso
         tprintf(" > %s() [0x%lx]\n", cur->binary_filename, true_offset);
       return; // exit early
     }
-    else if (addr < cur->start_addr) {
+    else if (ip < cur->start_addr) {
       upper = mid - 1;
     }
     else {
@@ -2105,28 +2099,30 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long addr, unw_curso
     }
   }
   //TODO find a better way to handle this
-  tprintf(" > Unmapped_memory_area:0x%lx\n", addr);
+  tprintf(" > Unmapped_memory_area:0x%lx\n", ip);
 
 }
-
-
 
 
 /* use libunwind to unwind the stack and print a backtrace */
 void print_libunwind_backtrace(struct tcb* tcp) {
 	unw_word_t ip;
 	int n = 0, ret;
-	unw_cursor_t c;
+	unw_cursor_t cursor;
 
-	if (unw_init_remote(&c, libunwind_as, tcp->libunwind_ui) < 0)
+	if (!tcp->mmap_cache)
+		// TODO ../libunwind/src/coredump/_UCD_get_proc_name.c
+		perror_msg_and_die("Memory maps cache is empty");
+	if (unw_init_remote(&cursor, libunwind_as, tcp->libunwind_ui) < 0)
 		perror_msg_and_die("Unable to initiate libunwind");
+
 	do {
-		if (unw_get_reg(&c, UNW_REG_IP, &ip) < 0)
-		perror_msg_and_die("Unable to walk the stack of process %d", tcp->pid);
+		if (unw_get_reg(&cursor, UNW_REG_IP, &ip) < 0)
+			perror_msg_and_die("Unable to walk the stack of process %d", tcp->pid);
 
-		print_normalized_addr(tcp, ip, c);
+		print_normalized_addr(tcp, ip, cursor);
 
-		ret = unw_step(&c);
+		ret = unw_step(&cursor);
 
 		if (++n > 255) {
 			/* guard against bad unwind info in old libraries... */
