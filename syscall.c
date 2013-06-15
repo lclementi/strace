@@ -2889,9 +2889,6 @@ trace_syscall_exiting(struct tcb *tcp)
 #ifdef LIB_UNWIND
     extern int use_libunwind;
     if (use_libunwind) {
-        struct user_regs_struct cur_regs;
-        if (ptrace(PTRACE_GETREGS, tcp->pid, NULL, (long)&cur_regs) < 0)
-            perror_msg_and_die("Unable to access process register (%d)", tcp->pid);
         // caching for efficiency ...
         if (!tcp->mmap_cache) {
           alloc_mmap_cache(tcp);
