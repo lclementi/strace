@@ -2084,9 +2084,14 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long ip, unw_cursor_
          */
 
         tprintf(" > %s(%s+0x%lx) [0x%lx]\n", cur->binary_filename, symbol_name, function_off_set, true_offset);
+	line_ended();
+
       }
-      else
+      else{
         tprintf(" > %s() [0x%lx]\n", cur->binary_filename, true_offset);
+	line_ended();
+
+      }
       return; // exit early
     }
     else if (ip < cur->start_addr) {
@@ -2883,6 +2888,7 @@ trace_syscall_exiting(struct tcb *tcp)
 	}
 	tprints("\n");
 	dumpio(tcp);
+	line_ended();
 
 #ifdef LIB_UNWIND
     extern int use_libunwind;
@@ -2895,7 +2901,6 @@ trace_syscall_exiting(struct tcb *tcp)
         print_libunwind_backtrace(tcp);
     }
 #endif
-	line_ended();
 
  ret:
 	tcp->flags &= ~TCB_INSYSCALL;
