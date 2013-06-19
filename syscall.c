@@ -2113,9 +2113,6 @@ void print_libunwind_backtrace(struct tcb* tcp) {
 	int n = 0, ret;
 	unw_cursor_t cursor;
 
-	if (!tcp->mmap_cache)
-		// TODO ../libunwind/src/coredump/_UCD_get_proc_name.c
-		perror_msg_and_die("Memory maps cache is empty");
 	if (unw_init_remote(&cursor, libunwind_as, tcp->libunwind_ui) < 0)
 		perror_msg_and_die("Unable to initiate libunwind");
 
