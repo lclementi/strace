@@ -2059,18 +2059,16 @@ static void print_normalized_addr(struct tcb* tcp, unsigned long ip, unw_cursor_
       symbol_name = malloc(symbol_name_size);
       if ( !symbol_name )
         perror_msg_and_die("Unable to allocate memory to hold symbol name");
-      symbol_name[0] = '\0';
-      ret_val = unw_get_proc_name(&cursor, symbol_name, symbol_name_size, &function_off_set); 
-      while ( ret_val == -UNW_ENOMEM ) {
-        //TODO remove this print
-        tprintf("Increasing size of symbol buffer\n");
+      do {
+        symbol_name[0] = '\0';
+        ret_val = unw_get_proc_name(&cursor, symbol_name, symbol_name_size, &function_off_set);
+	if ( ret_val != -UNW_ENOMEM )
+	    break;
         symbol_name_size *= 2;
         symbol_name = realloc(symbol_name, symbol_name_size);
         if ( !symbol_name )
           perror_msg_and_die("Unable to allocate memory to hold the symbol name");
-        symbol_name[0] = '\0';
-        ret_val = unw_get_proc_name(&cursor, symbol_name, symbol_name_size, &function_off_set);
-      }
+      } while ( ret_val == -UNW_ENOMEM );
 
       unsigned long true_offset;
       true_offset = ip - cur->start_addr + cur->mmap_offset;
