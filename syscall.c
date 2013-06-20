@@ -2033,100 +2033,100 @@ void delete_mmap_cache(struct tcb* tcp) {
 }
 
 
+
 /*
- * given a memory address addr and a pid, tprintf the following string:
- *   <absolute path to binary>:<hex address offset in that binary>:<absolute address>
- *
- *   e.g., "/lib32/libc-2.11.1.so:0x3asdf:0x403asdf " (include trailing whitespace)
+ * use libunwind to unwind the stack and print a backtrace 
  *
  * Pre-condition: tcp->mmap_cache is already initialized
  */
-static void print_normalized_addr(struct tcb* tcp, unsigned long ip, unw_cursor_t cursor) {
-	// since tcp->mmap_cache is sorted, do a binary search to find the cache entry
-	// that contains addr
-	int lower = 0;
-	int upper = tcp->mmap_cache_size;
-	int symbol_name_size = 40, ret_val;
-	char * symbol_name;
-	unw_word_t function_off_set;
-	
-	while (lower <= upper) {
-		int mid = (int)((upper + lower) / 2);
-		struct mmap_cache_t* cur = &tcp->mmap_cache[mid];
-		
-		if (ip >= cur->start_addr && ip < cur->end_addr) {
-		
-			symbol_name = malloc(symbol_name_size);
-			if ( !symbol_name )
-				perror_msg_and_die("Unable to allocate memory to hold symbol name");
-			do {
-				symbol_name[0] = '\0';
-				ret_val = unw_get_proc_name(&cursor, symbol_name, symbol_name_size, &function_off_set);
-				if ( ret_val != -UNW_ENOMEM )
-				    break;
-				symbol_name_size *= 2;
-				symbol_name = realloc(symbol_name, symbol_name_size);
-				if ( !symbol_name )
-				  perror_msg_and_die("Unable to allocate memory to hold the symbol name");
-			} while ( 1 );
-			
-			unsigned long true_offset;
-			true_offset = ip - cur->start_addr + cur->mmap_offset;
-			if ( symbol_name[0] ){
-				/*
-				 * we want to keep the format used by backtrace_symbols from the glibc
-				 * 
-				 * ./a.out() [0x40063d]
-				 * ./a.out() [0x4006bb]
-				 * ./a.out() [0x4006c6]
-				 * /lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0xed) [0x7fa2f8a5976d]
-				 * ./a.out() [0x400569]
-				 */
-				tprintf(" > %s(%s+0x%lx) [0x%lx]\n", cur->binary_filename, symbol_name, function_off_set, true_offset);
-				line_ended();
-			}
-			else{
-				tprintf(" > %s() [0x%lx]\n", cur->binary_filename, true_offset);
-				line_ended();
-			}
-			return; // exit early
-		}
-		else if (ip < cur->start_addr) {
-			upper = mid - 1;
-		}
-		else {
-			lower = mid + 1;
-		}
-	}
-	//TODO find a better way to handle this
-	tprintf(" > Unmapped_memory_area:0x%lx\n", ip);
-
-}
-
-
-/* use libunwind to unwind the stack and print a backtrace */
 void print_libunwind_backtrace(struct tcb* tcp) {
 	unw_word_t ip;
-	int n = 0, ret;
 	unw_cursor_t cursor;
+	unw_word_t function_off_set;
+	int stack_depth = 0, ret_val;
+	
+	/* these are used for the binary search through the mmap_chace */
+	int lower, upper, mid;
 
-	if (unw_init_remote(&cursor, libunwind_as, tcp->libunwind_ui) < 0)
+	int symbol_name_size = 40;
+	char * symbol_name;
+	struct mmap_cache_t* cur_mmap_cache;
+	unsigned long true_offset;
+
+	symbol_name = malloc(symbol_name_size);
+	if ( !symbol_name )
+		perror_msg_and_die("Unable to allocate memory to hold symbol name");
+
+	if ( unw_init_remote(&cursor, libunwind_as, tcp->libunwind_ui) < 0 )
 		perror_msg_and_die("Unable to initiate libunwind");
 
 	do {
-		if (unw_get_reg(&cursor, UNW_REG_IP, &ip) < 0)
+		/* looping on the stack frame */
+		if ( unw_get_reg(&cursor, UNW_REG_IP, &ip) < 0 )
 			perror_msg_and_die("Unable to walk the stack of process %d", tcp->pid);
 
-		print_normalized_addr(tcp, ip, cursor);
+		lower = 0;
+		upper = tcp->mmap_cache_size;
 
-		ret = unw_step(&cursor);
+		while ( lower <= upper ) {
+		    	/* find the mmap_cache and print the stack frame */
+			mid = (int)((upper + lower) / 2);
+			cur_mmap_cache = &tcp->mmap_cache[mid];
+			
+			if (ip >= cur_mmap_cache->start_addr && ip < cur_mmap_cache->end_addr) {
+			
+				do {
+					symbol_name[0] = '\0';
+					ret_val = unw_get_proc_name(&cursor, symbol_name, symbol_name_size, &function_off_set);
+					if ( ret_val != -UNW_ENOMEM )
+					    break;
+					symbol_name_size *= 2;
+					symbol_name = realloc(symbol_name, symbol_name_size);
+					if ( !symbol_name )
+					  perror_msg_and_die("Unable to allocate memory to hold the symbol name");
+				} while ( 1 );
+				
+				true_offset = ip - cur_mmap_cache->start_addr + cur_mmap_cache->mmap_offset;
+				if ( symbol_name[0] ){
+					/*
+					 * we want to keep the format used by backtrace_symbols from the glibc
+					 * 
+					 * ./a.out() [0x40063d]
+					 * ./a.out() [0x4006bb]
+					 * ./a.out() [0x4006c6]
+					 * /lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0xed) [0x7fa2f8a5976d]
+					 * ./a.out() [0x400569]
+					 */
+					tprintf(" > %s(%s+0x%lx) [0x%lx]\n", cur_mmap_cache->binary_filename, symbol_name, function_off_set, true_offset);
+					line_ended();
+				}
+				else{
+					tprintf(" > %s() [0x%lx]\n", cur_mmap_cache->binary_filename, true_offset);
+					line_ended();
+				}
 
-		if (++n > 255) {
+				break; /* stack frame printed */
+			}
+			else if ( ip < cur_mmap_cache->start_addr )
+				upper = mid - 1;
+
+			else 
+				lower = mid + 1;
+
+		}
+		if ( lower > upper ){
+			tprintf(" > Unmapped_memory_area:0x%lx\n", ip);
+			line_ended();
+		}
+
+		ret_val = unw_step(&cursor);
+
+		if ( ++stack_depth > 255 ) {
 			/* guard against bad unwind info in old libraries... */
 			perror_msg("libunwind warning: too deeply nested---assuming bogus unwind\n");
 			break;
 		}
-	} while (ret > 0);
+	} while (ret_val > 0);
 }
 #endif
 
