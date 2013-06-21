@@ -2063,7 +2063,8 @@ void print_libunwind_backtrace(struct tcb* tcp) {
 	do {
 		/* looping on the stack frame */
 		if ( unw_get_reg(&cursor, UNW_REG_IP, &ip) < 0 )
-			perror_msg_and_die("Unable to walk the stack of process %d", tcp->pid);
+			perror_msg_and_die("Unable to walk the stack of process %d", 
+				tcp->pid);
 
 		lower = 0;
 		upper = tcp->mmap_cache_size;
@@ -2073,17 +2074,19 @@ void print_libunwind_backtrace(struct tcb* tcp) {
 			mid = (int)((upper + lower) / 2);
 			cur_mmap_cache = &tcp->mmap_cache[mid];
 			
-			if (ip >= cur_mmap_cache->start_addr && ip < cur_mmap_cache->end_addr) {
+			if (ip >= cur_mmap_cache->start_addr && 
+				ip < cur_mmap_cache->end_addr) {
 			
 				do {
 					symbol_name[0] = '\0';
-					ret_val = unw_get_proc_name(&cursor, symbol_name, symbol_name_size, &function_off_set);
+					ret_val = unw_get_proc_name(&cursor, symbol_name, 
+						symbol_name_size, &function_off_set);
 					if ( ret_val != -UNW_ENOMEM )
-					    break;
+						break;
 					symbol_name_size *= 2;
 					symbol_name = realloc(symbol_name, symbol_name_size);
 					if ( !symbol_name )
-					  perror_msg_and_die("Unable to allocate memory to hold the symbol name");
+						perror_msg_and_die("Unable to allocate memory to hold the symbol name");
 				} while ( 1 );
 				
 				true_offset = ip - cur_mmap_cache->start_addr + cur_mmap_cache->mmap_offset;
@@ -2094,10 +2097,11 @@ void print_libunwind_backtrace(struct tcb* tcp) {
 					 * ./a.out() [0x40063d]
 					 * ./a.out() [0x4006bb]
 					 * ./a.out() [0x4006c6]
-					 * /lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0xed) [0x7fa2f8a5976d]
+					 * /lib64/libc.so.6(__libc_start_main+0xed) [0x7fa2f8a5976d]
 					 * ./a.out() [0x400569]
 					 */
-					tprintf(" > %s(%s+0x%lx) [0x%lx]\n", cur_mmap_cache->binary_filename, symbol_name, function_off_set, true_offset);
+					tprintf(" > %s(%s+0x%lx) [0x%lx]\n", cur_mmap_cache->binary_filename, 
+						symbol_name, function_off_set, true_offset);
 					line_ended();
 				}
 				else{
@@ -2885,15 +2889,15 @@ trace_syscall_exiting(struct tcb *tcp)
 	line_ended();
 
 #ifdef LIB_UNWIND
-    extern int use_libunwind;
-    if (use_libunwind) {
-        // caching for efficiency ...
-        if (!tcp->mmap_cache) {
-          alloc_mmap_cache(tcp);
-        }
-        // use libunwind to unwind the stack, which works even for code compiled
-        print_libunwind_backtrace(tcp);
-    }
+	extern int use_libunwind;
+	if (use_libunwind) {
+		// caching for efficiency ...
+		if (!tcp->mmap_cache) {
+			alloc_mmap_cache(tcp);
+		}
+		// use libunwind to unwind the stack, which works even for code compiled
+		print_libunwind_backtrace(tcp);
+	}
 #endif
 
  ret:
