@@ -392,6 +392,35 @@ typedef struct ioctlent {
 	unsigned long code;
 } struct_ioctlent;
 
+
+#ifdef LIB_UNWIND
+#include <libunwind-ptrace.h>
+#include <libunwind.h>
+
+/* keep a sorted array of cache entries, so that we can binary search
+ * through it
+ */
+struct mmap_cache_t {
+	/**
+	 * example entry:
+	 * 7fabbb09b000-7fabbb09f000 r--p 00179000 fc:00 1180246 /lib/libc-2.11.1.so
+	 *
+	 * start_addr  is 0x7fabbb09b000
+	 * end_addr    is 0x7fabbb09f000
+	 * mmap_offset is 0x179000
+	 * binary_filename is "/lib/libc-2.11.1.so"
+	 */
+	unsigned long start_addr;
+	unsigned long end_addr;
+	unsigned long mmap_offset;
+	char* binary_filename;
+};
+
+/* if this is true do the stack trace for every system call */
+extern bool use_libunwind;
+extern unw_addr_space_t libunwind_as;
+#endif
+
 /* Trace Control Block */
 struct tcb {
 	int flags;		/* See below for TCB_ values */
@@ -417,6 +446,12 @@ struct tcb {
 	struct timeval etime;	/* Syscall entry time */
 				/* Support for tracing forked processes: */
 	long inst[2];		/* Saved clone args (badly named) */
+
+#ifdef LIB_UNWIND
+	struct mmap_cache_t* mmap_cache;
+	int mmap_cache_size;
+	struct UPT_info* libunwind_ui;
+#endif
 };
 
 /* TCB flags */
@@ -709,6 +744,17 @@ extern void tv_add(struct timeval *, struct timeval *, struct timeval *);
 extern void tv_sub(struct timeval *, struct timeval *, struct timeval *);
 extern void tv_mul(struct timeval *, struct timeval *, int);
 extern void tv_div(struct timeval *, struct timeval *, int);
+
+#ifdef LIB_UNWIND
+/**
+ * print stack (-k flag) memory allocation and deallocation
+ */
+extern void alloc_mmap_cache(struct tcb* tcp);
+extern void delete_mmap_cache(struct tcb* tcp);
+#else
+# define alloc_mmap_cache(tcp) ((void)0)
+# define delete_mmap_cache(tcp) ((void)0)
+#endif
 
 /* Strace log generation machinery.
  *

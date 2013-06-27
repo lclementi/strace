@@ -980,6 +980,10 @@ sys_execve(struct tcb *tcp)
 			tprints("]");
 		}
 	}
+
+	if (exiting(tcp))
+		delete_mmap_cache(tcp);
+
 	return 0;
 }
 
@@ -1197,6 +1201,10 @@ sys_waitid(struct tcb *tcp)
 				printrusage(tcp, tcp->u_arg[4]);
 		}
 	}
+
+	if (exiting(tcp))
+		delete_mmap_cache(tcp);
+
 	return 0;
 }
 
