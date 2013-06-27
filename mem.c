@@ -175,6 +175,8 @@ static int
 print_mmap(struct tcb *tcp, long *u_arg, unsigned long long offset)
 {
 	if (entering(tcp)) {
+		delete_mmap_cache(tcp);
+
 		/* addr */
 		if (!u_arg[0])
 			tprints("NULL, ");
@@ -304,6 +306,8 @@ sys_munmap(struct tcb *tcp)
 		tprintf("%#lx, %lu",
 			tcp->u_arg[0], tcp->u_arg[1]);
 	}
+	if (exiting(tcp))
+		delete_mmap_cache(tcp);
 	return 0;
 }
 
@@ -315,6 +319,8 @@ sys_mprotect(struct tcb *tcp)
 			tcp->u_arg[0], tcp->u_arg[1]);
 		printflags(mmap_prot, tcp->u_arg[2], "PROT_???");
 	}
+	if (exiting(tcp))
+		delete_mmap_cache(tcp);
 	return 0;
 }
 

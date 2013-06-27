@@ -261,6 +261,30 @@ AC_CHECK_MEMBERS([struct sigcontext.sc_hi2],,, [#include <signal.h>
 # include <asm/sigcontext.h>
 #endif])
 
+dnl  libunwind tests
+AC_CHECK_HEADERS([libunwind-ptrace.h libunwind.h])
+
+if test "x$ac_cv_header_libunwind_ptrace_h" = "xyes" &&
+	test "x$ac_cv_header_libunwind_h" = "xyes"; then
+
+	AC_CHECK_LIB([unwind], [backtrace],[],[
+		AC_MSG_FAILURE([Unable to find libunwind])
+		])
+        AC_CHECK_LIB([unwind-$arch], [_U${arch}_create_addr_space],[], [
+	                      AC_MSG_FAILURE([Unable to find libunwind-$arch])
+	])
+	AC_CHECK_LIB([unwind-ptrace], [_UPT_create],[], [
+		AC_MSG_FAILURE([Unable to find libunwind-ptrace])
+		])
+
+	dnl everything is find we can activate stack tracing
+	AC_DEFINE([LIB_UNWIND], 1, [Compile stack tracing functionality])
+	AC_MSG_NOTICE([Enabled stack tracing])
+fi
+
+AM_CONDITIONAL([LIB_UNWIND], [test "x$ac_cv_lib_unwind_ptrace__UPT_create" == "xyes"])
+
+
 AC_CHECK_MEMBERS([struct utsname.domainname],,, [#include <sys/utsname.h>])
 
 AC_CHECK_DECLS([sys_errlist])
