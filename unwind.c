@@ -26,11 +26,7 @@
 
 #include "defs.h"
 
-
-#include <libunwind-ptrace.h>
 #include <libunwind.h>
-
- 
 
 /*
  * caching of /proc/ID/maps for each process to speed up stack tracing
@@ -125,7 +121,7 @@ delete_mmap_cache(struct tcb* tcp)
  * Pre-condition: tcp->mmap_cache is already initialized
  */
 void
-print_libunwind_backtrace(struct tcb* tcp) 
+print_stacktrace(struct tcb* tcp)
 {
        unw_word_t ip;
        unw_cursor_t cursor;

@@ -407,8 +407,6 @@ typedef struct ioctlent {
 
 
 #ifdef LIB_UNWIND
-#include <libunwind-ptrace.h>
-#include <libunwind.h>
 
 /* keep a sorted array of cache entries, so that we can binary search
  * through it
@@ -428,6 +426,8 @@ struct mmap_cache_t {
 	unsigned long mmap_offset;
 	char* binary_filename;
 };
+
+typedef struct unw_addr_space *unw_addr_space_t;
 
 /* if this is true do the stack trace for every system call */
 extern bool use_libunwind;
@@ -762,6 +762,7 @@ extern void tv_div(struct timeval *, struct timeval *, int);
  */
 extern void alloc_mmap_cache(struct tcb* tcp);
 extern void delete_mmap_cache(struct tcb* tcp);
+extern void print_stacktrace(struct tcb* tcp);
 #else
 # define alloc_mmap_cache(tcp) ((void)0)
 # define delete_mmap_cache(tcp) ((void)0)

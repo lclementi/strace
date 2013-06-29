@@ -50,6 +50,13 @@ extern char **environ;
 extern int optind;
 extern char *optarg;
 
+#ifdef LIB_UNWIND
+# include <libunwind-ptrace.h>
+
+/* if this is true do the stack trace for every system call */
+bool use_libunwind = false;
+unw_addr_space_t libunwind_as;
+#endif
 
 #if defined __NR_tkill
 # define my_tkill(tid, sig) syscall(__NR_tkill, (tid), (sig))
@@ -189,12 +196,6 @@ strerror(int err_no)
 
 #endif /* HAVE_STERRROR */
 
-
-#ifdef LIB_UNWIND
-/* if this is true do the stack trace for every system call */
-bool use_libunwind = false;
-unw_addr_space_t libunwind_as;
-#endif
 
 
 static void

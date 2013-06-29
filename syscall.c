@@ -2689,7 +2689,7 @@ trace_syscall_exiting(struct tcb *tcp)
 		if (!tcp->mmap_cache) {
 			alloc_mmap_cache(tcp);
 		}
-		print_libunwind_backtrace(tcp);
+		print_stacktrace(tcp);
 	}
 #endif
 
