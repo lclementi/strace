@@ -261,8 +261,17 @@ AC_CHECK_MEMBERS([struct sigcontext.sc_hi2],,, [#include <signal.h>
 # include <asm/sigcontext.h>
 #endif])
 
-dnl  libunwind tests
-AC_CHECK_HEADERS([libunwind-ptrace.h libunwind.h])
+
+
+dnl stack trace with libunwind
+dnl if libunwind headers are found then it will include the stacktrace
+dnl users can disable this default with --disable-stacktrace
+AC_ARG_ENABLE([stacktrace],
+	[AS_HELP_STRING([--disable-stacktrace], [Disable support for stacktrace])],
+	[], [])
+
+AS_IF([test "x$enable_stacktrace" != xno],
+	[AC_CHECK_HEADERS([libunwind-ptrace.h libunwind.h])])
 
 if test "x$ac_cv_header_libunwind_ptrace_h" = "xyes" &&
 	test "x$ac_cv_header_libunwind_h" = "xyes"; then
@@ -271,8 +280,8 @@ if test "x$ac_cv_header_libunwind_ptrace_h" = "xyes" &&
 		AC_MSG_FAILURE([Unable to find libunwind])
 		])
         AC_CHECK_LIB([unwind-generic], [_U${arch}_create_addr_space],[], [
-	                      AC_MSG_FAILURE([Unable to find libunwind-generic])
-	])
+		AC_MSG_FAILURE([Unable to find libunwind-generic])
+		])
 	AC_CHECK_LIB([unwind-ptrace], [_UPT_create],[], [
 		AC_MSG_FAILURE([Unable to find libunwind-ptrace])
 		])
