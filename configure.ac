@@ -270,8 +270,8 @@ if test "x$ac_cv_header_libunwind_ptrace_h" = "xyes" &&
 	AC_CHECK_LIB([unwind], [backtrace],[],[
 		AC_MSG_FAILURE([Unable to find libunwind])
 		])
-        AC_CHECK_LIB([unwind-$arch], [_U${arch}_create_addr_space],[], [
-	                      AC_MSG_FAILURE([Unable to find libunwind-$arch])
+        AC_CHECK_LIB([unwind-generic], [_U${arch}_create_addr_space],[], [
+	                      AC_MSG_FAILURE([Unable to find libunwind-generic])
 	])
 	AC_CHECK_LIB([unwind-ptrace], [_UPT_create],[], [
 		AC_MSG_FAILURE([Unable to find libunwind-ptrace])
