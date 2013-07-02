@@ -46,6 +46,7 @@ strace_SOURCES =	\
 
 if LIB_UNWIND
 strace_SOURCES += unwind.c
+strace_LDADD = $(libunwind_LIBS)
 endif
 
 

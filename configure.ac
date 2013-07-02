@@ -262,35 +262,56 @@ AC_CHECK_MEMBERS([struct sigcontext.sc_hi2],,, [#include <signal.h>
 #endif])
 
 
-
 dnl stack trace with libunwind
-dnl if libunwind headers are found then it will include the stacktrace
-dnl users can disable this default with --disable-stacktrace
-AC_ARG_ENABLE([stacktrace],
-	[AS_HELP_STRING([--disable-stacktrace], [Disable support for stacktrace])],
-	[], [])
+AC_ARG_WITH([libunwind],
+	[AS_HELP_STRING([--with-libunwind], [libunwind is used to display system call stacktrace])],
+	[case "${withval}" in
+	(yes|no) enable_libunwind=$withval;;
+	(*) enable_libunwind=yes
+		AM_CPPFLAGS="${AM_CPPFLAGS} -I${withval}/include"
+		AM_LDFLAGS="${AM_LDFLAGS} -L${withval}/lib"
+		libunwind_LD_LIBRARY_PATH="${withval}/lib"
+	;;
+        esac] , [enable_libunwind=maybe])
 
-AS_IF([test "x$enable_stacktrace" != xno],
-	[AC_CHECK_HEADERS([libunwind-ptrace.h libunwind.h])])
+AS_IF([test "x$enable_libunwind" != xno],
+	[saved_CPPFLAGS="${CPPFLAGS}"
+	 CPPFLAGS="${CPPFLAGS} ${AM_CPPFLAGS}"
+	 AC_CHECK_HEADERS([libunwind-ptrace.h libunwind.h])
+	 CPPFLAGS="${saved_CPPFLAGS}"
+	 ])
 
 if test "x$ac_cv_header_libunwind_ptrace_h" = "xyes" &&
 	test "x$ac_cv_header_libunwind_h" = "xyes"; then
 
-	AC_CHECK_LIB([unwind], [backtrace],[],[
-		AC_MSG_FAILURE([Unable to find libunwind])
-		])
-        AC_CHECK_LIB([unwind-generic], [_U${arch}_create_addr_space],[], [
-		AC_MSG_FAILURE([Unable to find libunwind-generic])
-		])
-	AC_CHECK_LIB([unwind-ptrace], [_UPT_create],[], [
-		AC_MSG_FAILURE([Unable to find libunwind-ptrace])
-		])
+	dnl code is taken from ltrace
+	case "${host_cpu}" in
+		arm*|sa110)         UNWIND_ARCH="arm" ;;
+		i?86)               UNWIND_ARCH="x86" ;;
+		powerpc)            UNWIND_ARCH="ppc32" ;;
+		powerpc64)          UNWIND_ARCH="ppc64" ;;
+		mips*)              UNWIND_ARCH="mips" ;;
+		*)                  UNWIND_ARCH="${host_cpu}" ;;
+	esac
 
-	dnl everything is find we can activate stack tracing
+	saved_LDFLAGS="${LDFLAGS}"
+	LDFLAGS="${LDFLAGS} ${AM_LDFLAGS}"
+	AC_CHECK_LIB([unwind], [backtrace],[libunwind_LIBS=-lunwind],
+		     [AC_MSG_FAILURE([Unable to find libunwind])])
+        AC_CHECK_LIB([unwind-generic], [_U${UNWIND_ARCH}_create_addr_space],
+		     [libunwind_LIBS="-lunwind-generic $libunwind_LIBS"],
+		     [AC_MSG_FAILURE([Unable to find libunwind-generic])],
+		     [$libunwind_LIBS])
+	AC_CHECK_LIB([unwind-ptrace], [_UPT_create],[libunwind_LIBS="-lunwind-ptrace $libunwind_LIBS"],
+		     [AC_MSG_FAILURE([Unable to find libunwind-ptrace])],
+		     [$libunwind_LIBS])
+
+	LDFLAGS="${saved_LDFLAGS}"
+	dnl we have all the dependencies we need we can activate stack tracing
+	AC_SUBST(libunwind_LIBS)
 	AC_DEFINE([LIB_UNWIND], 1, [Compile stack tracing functionality])
 	AC_MSG_NOTICE([Enabled stack tracing])
 fi
-
 AM_CONDITIONAL([LIB_UNWIND], [test "x$ac_cv_lib_unwind_ptrace__UPT_create" == "xyes"])
 
 
