@@ -427,11 +427,9 @@ struct mmap_cache_t {
 	char* binary_filename;
 };
 
-typedef struct unw_addr_space *unw_addr_space_t;
 
 /* if this is true do the stack trace for every system call */
 extern bool use_libunwind;
-extern unw_addr_space_t libunwind_as;
 #endif
 
 /* Trace Control Block */

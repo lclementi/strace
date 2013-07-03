@@ -196,8 +196,6 @@ strerror(int err_no)
 
 #endif /* HAVE_STERRROR */
 
-
-
 static void
 usage(FILE *ofp, int exitval)
 {

@@ -28,6 +28,8 @@
 
 #include <libunwind.h>
 
+
+extern unw_addr_space_t libunwind_as;
 /*
  * caching of /proc/ID/maps for each process to speed up stack tracing
  *
