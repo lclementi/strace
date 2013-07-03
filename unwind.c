@@ -70,7 +70,7 @@ alloc_mmap_cache(struct tcb* tcp)
 
 		if(end_addr < start_addr)
 			perror_msg_and_die("Unrecognized maps file format %s", filename);
-		
+
 		struct mmap_cache_t* cur_entry = &cache_head[tcp->mmap_cache_size];
 		cur_entry->start_addr = start_addr;
 		cur_entry->end_addr = end_addr;
@@ -128,10 +128,8 @@ print_stacktrace(struct tcb* tcp)
 	unw_cursor_t cursor;
 	unw_word_t function_off_set;
 	int stack_depth = 0, ret_val;
-	
 	/* these are used for the binary search through the mmap_chace */
 	int lower, upper, mid;
-
 	int symbol_name_size = 40;
 	char * symbol_name;
 	struct mmap_cache_t* cur_mmap_cache;
@@ -158,10 +156,10 @@ print_stacktrace(struct tcb* tcp)
 			/* find the mmap_cache and print the stack frame */
 			mid = (int)((upper + lower) / 2);
 			cur_mmap_cache = &tcp->mmap_cache[mid];
-			
+
 			if (ip >= cur_mmap_cache->start_addr &&
 				ip < cur_mmap_cache->end_addr) {
-			
+
 				do {
 					symbol_name[0] = '\0';
 					ret_val = unw_get_proc_name(&cursor, symbol_name,
@@ -173,7 +171,7 @@ print_stacktrace(struct tcb* tcp)
 					if ( !symbol_name )
 						die_out_of_memory();
 				} while (1);
-				
+
 				true_offset = ip - cur_mmap_cache->start_addr + cur_mmap_cache->mmap_offset;
 				if (symbol_name[0]) {
 					/*

@@ -264,21 +264,21 @@ AC_CHECK_MEMBERS([struct sigcontext.sc_hi2],,, [#include <signal.h>
 
 dnl stack trace with libunwind
 AC_ARG_WITH([libunwind],
-	[AS_HELP_STRING([--with-libunwind], [libunwind is used to display system call stacktrace])],
-	[case "${withval}" in
-	(yes|no) enable_libunwind=$withval;;
-	(*) enable_libunwind=yes
-		libunwind_CPPFLAGS="${AM_CPPFLAGS} -I${withval}/include"
-		libunwind_LDFLAGS="-L${withval}/lib"
-	;;
-        esac] , [enable_libunwind=maybe])
+	    [AS_HELP_STRING([--with-libunwind], 
+			    [libunwind is used to display system call stacktrace])],
+	    [case "${withval}" in 
+	     (yes|no) enable_libunwind=$withval;;
+	     (*)      enable_libunwind=yes
+		      libunwind_CPPFLAGS="${AM_CPPFLAGS} -I${withval}/include"
+		      libunwind_LDFLAGS="-L${withval}/lib" ;;
+	     esac], 
+	    [enable_libunwind=maybe])
 
 AS_IF([test "x$enable_libunwind" != xno],
 	[saved_CPPFLAGS="${CPPFLAGS}"
-	 CPPFLAGS="${CPPFLAGS} ${libunwind_CPPFLAGS}"
-	 AC_CHECK_HEADERS([libunwind-ptrace.h libunwind.h])
-	 CPPFLAGS="${saved_CPPFLAGS}"
-	 ])
+	CPPFLAGS="${CPPFLAGS} ${libunwind_CPPFLAGS}"
+	AC_CHECK_HEADERS([libunwind-ptrace.h libunwind.h])
+	CPPFLAGS="${saved_CPPFLAGS}" ])
 
 if test "x$ac_cv_header_libunwind_ptrace_h" = "xyes" &&
 	test "x$ac_cv_header_libunwind_h" = "xyes"; then
