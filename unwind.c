@@ -38,7 +38,6 @@ extern unw_addr_space_t libunwind_as;
 void
 alloc_mmap_cache(struct tcb* tcp)
 {
-
 	/* start with a small dynamically-allocated array and then expand it */
 	int cur_array_size = 10;
 	char filename[sizeof ("/proc/0123456789/maps")];

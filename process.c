@@ -993,7 +993,7 @@ sys_execve(struct tcb *tcp)
 		}
 	}
 
-	if (exiting(tcp))
+	if (exiting(tcp) && use_libunwind)
 		delete_mmap_cache(tcp);
 
 	return 0;
@@ -1214,7 +1214,7 @@ sys_waitid(struct tcb *tcp)
 		}
 	}
 
-	if (exiting(tcp))
+	if (exiting(tcp) && use_libunwind)
 		delete_mmap_cache(tcp);
 
 	return 0;
