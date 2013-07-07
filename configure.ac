@@ -264,14 +264,14 @@ AC_CHECK_MEMBERS([struct sigcontext.sc_hi2],,, [#include <signal.h>
 
 dnl stack trace with libunwind
 AC_ARG_WITH([libunwind],
-	    [AS_HELP_STRING([--with-libunwind], 
+	    [AS_HELP_STRING([--with-libunwind],
 			    [libunwind is used to display system call stacktrace])],
-	    [case "${withval}" in 
+	    [case "${withval}" in
 	     (yes|no) enable_libunwind=$withval;;
 	     (*)      enable_libunwind=yes
 		      libunwind_CPPFLAGS="${AM_CPPFLAGS} -I${withval}/include"
 		      libunwind_LDFLAGS="-L${withval}/lib" ;;
-	     esac], 
+	     esac],
 	    [enable_libunwind=maybe])
 
 AS_IF([test "x$enable_libunwind" != xno],
@@ -295,17 +295,19 @@ if test "x$ac_cv_header_libunwind_ptrace_h" = "xyes" &&
 
 	saved_LDFLAGS="${LDFLAGS}"
 	LDFLAGS="${LDFLAGS} ${libunwind_LDFLAGS}"
-	AC_CHECK_LIB([unwind], [backtrace],[libunwind_LIBS=-lunwind],
+	AC_CHECK_LIB([unwind], [backtrace],
+		     [libunwind_LIBS="-lunwind"],
 		     [AC_MSG_FAILURE([Unable to find libunwind])])
         AC_CHECK_LIB([unwind-generic], [_U${UNWIND_ARCH}_create_addr_space],
 		     [libunwind_LIBS="-lunwind-generic $libunwind_LIBS"],
 		     [AC_MSG_FAILURE([Unable to find libunwind-generic])],
 		     [$libunwind_LIBS])
-	AC_CHECK_LIB([unwind-ptrace], [_UPT_create],[libunwind_LIBS="-lunwind-ptrace $libunwind_LIBS"],
+	AC_CHECK_LIB([unwind-ptrace], [_UPT_create],
+		     [libunwind_LIBS="-lunwind-ptrace $libunwind_LIBS"],
 		     [AC_MSG_FAILURE([Unable to find libunwind-ptrace])],
 		     [$libunwind_LIBS])
-
 	LDFLAGS="${saved_LDFLAGS}"
+
 	dnl we have all the dependencies we need we can activate stack tracing
 	AC_SUBST(libunwind_LIBS)
 	AC_SUBST(libunwind_LDFLAGS)
