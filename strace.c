@@ -50,6 +50,13 @@ extern char **environ;
 extern int optind;
 extern char *optarg;
 
+#ifdef LIB_UNWIND
+# include <libunwind-ptrace.h>
+
+/* if this is true do the stack trace for every system call */
+bool use_libunwind = false;
+unw_addr_space_t libunwind_as;
+#endif
 
 #if defined __NR_tkill
 # define my_tkill(tid, sig) syscall(__NR_tkill, (tid), (sig))
@@ -231,6 +238,10 @@ usage: strace [-CdffhiqrtttTvVxxy] [-I n] [-e expr]...\n\
 -E var -- remove var from the environment for command\n\
 -P path -- trace accesses to path\n\
 "
+#ifdef LIB_UNWIND
+"-k obtain stack trace between each syscall\n\
+"
+#endif
 /* ancient, no one should use it
 -F -- attempt to follow vforks (deprecated, use -f)\n\
  */
@@ -685,6 +696,15 @@ alloctcb(int pid)
 #if SUPPORTED_PERSONALITIES > 1
 			tcp->currpers = current_personality;
 #endif
+
+#ifdef LIB_UNWIND
+			if (use_libunwind) {
+				tcp->libunwind_ui = _UPT_create(tcp->pid);
+				if (!tcp->libunwind_ui)
+				    die_out_of_memory();
+			}
+#endif
+
 			nprocs++;
 			if (debug_flag)
 				fprintf(stderr, "new tcb for pid %d, active tcbs:%d\n", tcp->pid, nprocs);
@@ -721,6 +741,12 @@ droptcb(struct tcb *tcp)
 	if (printing_tcp == tcp)
 		printing_tcp = NULL;
 
+#ifdef LIB_UNWIND
+	if (use_libunwind) {
+		delete_mmap_cache(tcp);
+		_UPT_destroy(tcp->libunwind_ui);
+	}
+#endif
 	memset(tcp, 0, sizeof(*tcp));
 }
 
@@ -1642,6 +1668,9 @@ init(int argc, char *argv[])
 	qualify("signal=all");
 	while ((c = getopt(argc, argv,
 		"+b:cCdfFhiqrtTvVxyz"
+#ifdef LIB_UNWIND
+		"k"
+#endif
 		"D"
 		"a:e:o:O:p:s:S:u:E:P:I:")) != EOF) {
 		switch (c) {
@@ -1744,6 +1773,11 @@ init(int argc, char *argv[])
 		case 'u':
 			username = strdup(optarg);
 			break;
+#ifdef LIB_UNWIND
+		case 'k':
+			use_libunwind = true;
+			break;
+#endif
 		case 'E':
 			if (putenv(optarg) < 0)
 				die_out_of_memory();
@@ -1774,6 +1808,15 @@ init(int argc, char *argv[])
 	if (nprocs != 0 && daemonized_tracer) {
 		error_msg_and_die("-D and -p are mutually exclusive");
 	}
+
+#ifdef LIB_UNWIND
+	if (use_libunwind) {
+		libunwind_as = unw_create_addr_space(&_UPT_accessors, 0);
+		if (!libunwind_as) {
+			error_msg_and_die("Fatal error: unable to create address space for stack tracing\n");
+		}
+	}
+#endif
 
 	if (!followfork)
 		followfork = optF;
