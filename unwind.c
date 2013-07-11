@@ -160,17 +160,17 @@ print_stacktrace(struct tcb* tcp)
 			if (ip >= cur_mmap_cache->start_addr &&
 				ip < cur_mmap_cache->end_addr) {
 
-				do {
+				for (;;) {
 					symbol_name[0] = '\0';
 					ret_val = unw_get_proc_name(&cursor, symbol_name,
 						symbol_name_size, &function_off_set);
-					if ( ret_val != -UNW_ENOMEM )
+					if (ret_val != -UNW_ENOMEM)
 						break;
 					symbol_name_size *= 2;
 					symbol_name = realloc(symbol_name, symbol_name_size);
-					if ( !symbol_name )
+					if (!symbol_name)
 						die_out_of_memory();
-				} while (1);
+				}
 
 				true_offset = ip - cur_mmap_cache->start_addr + cur_mmap_cache->mmap_offset;
 				if (symbol_name[0]) {
@@ -186,8 +186,7 @@ print_stacktrace(struct tcb* tcp)
 					tprintf(" > %s(%s+0x%lx) [0x%lx]\n", cur_mmap_cache->binary_filename,
 						symbol_name, function_off_set, true_offset);
 					line_ended();
-				}
-				else{
+				} else {
 					tprintf(" > %s() [0x%lx]\n", cur_mmap_cache->binary_filename, true_offset);
 					line_ended();
 				}
@@ -201,17 +200,18 @@ print_stacktrace(struct tcb* tcp)
 				lower = mid + 1;
 
 		}
-		if (lower > upper){
-			tprintf(" > Unmapped_memory_area:0x%lx\n", ip);
+		if (lower > upper) {
+			tprintf(" > Unmapped_memory_area [0x%lx]\n", ip);
 			line_ended();
 		}
 
 		ret_val = unw_step(&cursor);
 
 		if (++stack_depth > 255) {
-			/* guard against bad unwind info in old libraries... */
-			perror_msg("libunwind warning: too deeply nested---assuming bogus unwind\n");
+			tprintf("libunwind warning: stack frame greater than 255 aborting backtracing\n");
+			line_ended();
 			break;
 		}
 	} while (ret_val > 0);
+	free(symbol_name);
 }
