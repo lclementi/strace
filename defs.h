@@ -764,9 +764,6 @@ extern void tv_div(struct timeval *, struct timeval *, int);
 extern void alloc_mmap_cache(struct tcb* tcp);
 extern void delete_mmap_cache(struct tcb* tcp);
 extern void print_stacktrace(struct tcb* tcp);
-#else
-# define alloc_mmap_cache(tcp) ((void)0)
-# define delete_mmap_cache(tcp) ((void)0)
 #endif
 
 /* Strace log generation machinery.
