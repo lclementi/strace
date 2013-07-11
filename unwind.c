@@ -129,7 +129,7 @@ print_stacktrace(struct tcb* tcp)
 	unw_word_t function_off_set;
 	int stack_depth = 0, ret_val;
 	/* these are used for the binary search through the mmap_chace */
-	int lower, upper, mid;
+	unsigned int lower, upper, mid;
 	int symbol_name_size = 40;
 	char * symbol_name;
 	struct mmap_cache_t* cur_mmap_cache;
@@ -145,8 +145,7 @@ print_stacktrace(struct tcb* tcp)
 	do {
 		/* looping on the stack frame */
 		if (unw_get_reg(&cursor, UNW_REG_IP, &ip) < 0)
-			perror_msg_and_die("Can't walk the stack of process %d",
-				tcp->pid);
+			perror_msg("Can't walk the stack of process %d", tcp->pid);
 
 		lower = 0;
 		upper = tcp->mmap_cache_size - 1;
