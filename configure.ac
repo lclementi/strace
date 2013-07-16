@@ -271,18 +271,27 @@ AC_ARG_WITH([libunwind],
 	    [AS_HELP_STRING([--with-libunwind],
 			    [libunwind is used to display system call stacktrace])],
 	    [case "${withval}" in
-	     (yes|no) enable_libunwind=$withval;;
-	     (*)      enable_libunwind=yes
-		      libunwind_CPPFLAGS="${AM_CPPFLAGS} -I${withval}/include"
+	     (yes|no) with_libunwind=$withval;;
+	     (*)      with_libunwind=yes
+		      libunwind_CPPFLAGS="-I${withval}/include"
 		      libunwind_LDFLAGS="-L${withval}/lib" ;;
 	     esac],
-	    [enable_libunwind=maybe])
+	    [with_libunwind=check])
 
-AS_IF([test "x$enable_libunwind" != xno],
+AS_IF([test "x$with_libunwind" != "xno"],
 	[saved_CPPFLAGS="${CPPFLAGS}"
 	CPPFLAGS="${CPPFLAGS} ${libunwind_CPPFLAGS}"
-	AC_CHECK_HEADERS([libunwind-ptrace.h libunwind.h])
+	AC_CHECK_HEADERS([libunwind-ptrace.h],[],
+			 [if test "x$with_libunwind" != "xcheck" ; then
+			     AC_MSG_FAILURE([Unable to find libunwind-ptrace.h header])
+			  fi])
+	AC_CHECK_HEADERS([libunwind.h],[],
+			 [if test "x$with_libunwind" != "xcheck" ; then
+			     AC_MSG_FAILURE([Unable to find libunwind.h header])
+			  fi])
 	CPPFLAGS="${saved_CPPFLAGS}" ])
+
+
 
 if test "x$ac_cv_header_libunwind_ptrace_h" = "xyes" &&
 	test "x$ac_cv_header_libunwind_h" = "xyes"; then
@@ -301,14 +310,20 @@ if test "x$ac_cv_header_libunwind_ptrace_h" = "xyes" &&
 	LDFLAGS="${LDFLAGS} ${libunwind_LDFLAGS}"
 	AC_CHECK_LIB([unwind], [backtrace],
 		     [libunwind_LIBS="-lunwind"],
-		     [AC_MSG_FAILURE([Unable to find libunwind])])
+		     [if test "x$with_libunwind" != "xcheck" ; then
+			AC_MSG_FAILURE([Unable to find libunwind])
+		      fi])
         AC_CHECK_LIB([unwind-generic], [_U${UNWIND_ARCH}_create_addr_space],
 		     [libunwind_LIBS="-lunwind-generic $libunwind_LIBS"],
-		     [AC_MSG_FAILURE([Unable to find libunwind-generic])],
+		     [if test "x$with_libunwind" != "xcheck" ; then
+		        AC_MSG_FAILURE([Unable to find libunwind-generic])
+		      fi],
 		     [$libunwind_LIBS])
 	AC_CHECK_LIB([unwind-ptrace], [_UPT_create],
 		     [libunwind_LIBS="-lunwind-ptrace $libunwind_LIBS"],
-		     [AC_MSG_FAILURE([Unable to find libunwind-ptrace])],
+		     [if test "x$with_libunwind" != "xcheck" ; then
+		        AC_MSG_FAILURE([Unable to find libunwind-ptrace])
+		      fi],
 		     [$libunwind_LIBS])
 	LDFLAGS="${saved_LDFLAGS}"
 
@@ -316,6 +331,10 @@ if test "x$ac_cv_header_libunwind_ptrace_h" = "xyes" &&
 	AC_SUBST(libunwind_LIBS)
 	AC_SUBST(libunwind_LDFLAGS)
 	AC_SUBST(libunwind_CPPFLAGS)
+fi
+
+dnl enable libunwind
+if test "x$ac_cv_lib_unwind_ptrace__UPT_create" == "xyes"; then 
 	AC_DEFINE([LIB_UNWIND], 1, [Compile stack tracing functionality])
 	AC_MSG_NOTICE([Enabled stack tracing])
 fi
