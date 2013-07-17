@@ -192,6 +192,15 @@ print_stacktrace(struct tcb* tcp)
 
 				break; /* stack frame printed */
 			}
+			else if (mid == 0) {
+				/**
+				 * there is a bug in libunwind >= 1.0
+				 * after a set_tid_address syscall unw_get_reg returns IP=0
+				 */
+				tprintf(" > backtracing_error\n");
+				line_ended();
+				goto ret;
+			}
 			else if (ip < cur_mmap_cache->start_addr)
 				upper = mid - 1;
 
@@ -202,6 +211,7 @@ print_stacktrace(struct tcb* tcp)
 		if (lower > upper) {
 			tprintf(" > Unmapped_memory_area [0x%lx]\n", ip);
 			line_ended();
+			goto ret;
 		}
 
 		ret_val = unw_step(&cursor);
@@ -212,5 +222,6 @@ print_stacktrace(struct tcb* tcp)
 			break;
 		}
 	} while (ret_val > 0);
+ret:
 	free(symbol_name);
 }
