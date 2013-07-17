@@ -38,10 +38,14 @@ extern unw_addr_space_t libunwind_as;
 void
 alloc_mmap_cache(struct tcb* tcp)
 {
-	/* start with a small dynamically-allocated array and then expand it */
-	int cur_array_size = 10;
+	unsigned long start_addr, end_addr, mmap_offset;
 	char filename[sizeof ("/proc/0123456789/maps")];
-	struct mmap_cache_t* cache_head = malloc(cur_array_size * sizeof(*cache_head));
+	char buffer[300];
+	char binary_path[512];
+	struct mmap_cache_t *cur_entry, *prev_entry;
+	/* start with a small dynamically-allocated array and then expand it */
+	size_t cur_array_size = 10;
+	struct mmap_cache_t *cache_head = malloc(cur_array_size * sizeof(*cache_head));
 	if (!cache_head)
 		die_out_of_memory();
 
@@ -50,13 +54,10 @@ alloc_mmap_cache(struct tcb* tcp)
 	FILE* f = fopen(filename, "r");
 	if (!f)
 		perror_msg_and_die("Can't open %s", filename);
-	char s[300];
-	while (fgets(s, sizeof(s), f) != NULL) {
-		unsigned long start_addr, end_addr, mmap_offset;
-		char binary_path[512];
+	while (fgets(buffer, sizeof(buffer), f) != NULL) {
 		binary_path[0] = '\0'; // 'reset' it just to be paranoid
 
-		sscanf(s, "%lx-%lx %*c%*c%*c%*c %lx %*x:%*x %*d %[^\n]", &start_addr,
+		sscanf(buffer, "%lx-%lx %*c%*c%*c%*c %lx %*x:%*x %*d %[^\n]", &start_addr,
 			&end_addr, &mmap_offset, binary_path);
 
 		/* ignore special 'fake files' like "[vdso]", "[heap]", "[stack]", */
@@ -71,7 +72,7 @@ alloc_mmap_cache(struct tcb* tcp)
 		if(end_addr < start_addr)
 			perror_msg_and_die("Unrecognized maps file format %s", filename);
 
-		struct mmap_cache_t* cur_entry = &cache_head[tcp->mmap_cache_size];
+		cur_entry = &cache_head[tcp->mmap_cache_size];
 		cur_entry->start_addr = start_addr;
 		cur_entry->end_addr = end_addr;
 		cur_entry->mmap_offset = mmap_offset;
@@ -81,7 +82,7 @@ alloc_mmap_cache(struct tcb* tcp)
 		 * ascending order
 		 */
 		if (tcp->mmap_cache_size > 0) {
-			struct mmap_cache_t* prev_entry = &cache_head[tcp->mmap_cache_size - 1];
+			prev_entry = &cache_head[tcp->mmap_cache_size - 1];
 			if (prev_entry->start_addr >= cur_entry->start_addr)
 				perror_msg_and_die("Overlaying memory region in %s", filename);
 			if (prev_entry->end_addr > cur_entry->start_addr)
@@ -105,7 +106,7 @@ alloc_mmap_cache(struct tcb* tcp)
 void
 delete_mmap_cache(struct tcb* tcp)
 {
-	int i;
+	unsigned int i;
 	for (i = 0; i < tcp->mmap_cache_size; i++) {
 		free(tcp->mmap_cache[i].binary_filename);
 	}
@@ -130,7 +131,7 @@ print_stacktrace(struct tcb* tcp)
 	int stack_depth = 0, ret_val;
 	/* these are used for the binary search through the mmap_chace */
 	unsigned int lower, upper, mid;
-	int symbol_name_size = 40;
+	size_t symbol_name_size = 40;
 	char * symbol_name;
 	struct mmap_cache_t* cur_mmap_cache;
 	unsigned long true_offset;
@@ -150,10 +151,9 @@ print_stacktrace(struct tcb* tcp)
 		lower = 0;
 		upper = tcp->mmap_cache_size - 1;
 
-
 		while (lower <= upper) {
 			/* find the mmap_cache and print the stack frame */
-			mid = (int)((upper + lower) / 2);
+			mid = (unsigned int)((upper + lower) / 2);
 			cur_mmap_cache = &tcp->mmap_cache[mid];
 
 			if (ip >= cur_mmap_cache->start_addr &&

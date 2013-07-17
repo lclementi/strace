@@ -469,7 +469,7 @@ struct tcb {
 
 #ifdef LIB_UNWIND
 	struct mmap_cache_t* mmap_cache;
-	int mmap_cache_size;
+	unsigned int mmap_cache_size;
 	struct UPT_info* libunwind_ui;
 #endif
 };
