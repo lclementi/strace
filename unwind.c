@@ -26,6 +26,9 @@
 
 #include "defs.h"
 
+
+#include <limits.h>
+
 #include <libunwind.h>
 
 
@@ -40,8 +43,8 @@ alloc_mmap_cache(struct tcb* tcp)
 {
 	unsigned long start_addr, end_addr, mmap_offset;
 	char filename[sizeof ("/proc/0123456789/maps")];
-	char buffer[300];
-	char binary_path[512];
+	char buffer[PATH_MAX + 80];
+	char binary_path[PATH_MAX];
 	struct mmap_cache_t *cur_entry, *prev_entry;
 	/* start with a small dynamically-allocated array and then expand it */
 	size_t cur_array_size = 10;
@@ -209,7 +212,7 @@ print_stacktrace(struct tcb* tcp)
 
 		}
 		if (lower > upper) {
-			tprintf(" > Unmapped_memory_area [0x%lx]\n", ip);
+			tprintf(" > backtracing_error [0x%lx]\n", ip);
 			line_ended();
 			goto ret;
 		}
