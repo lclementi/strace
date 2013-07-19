@@ -12,7 +12,7 @@ ARCH		= @arch@
 
 ACLOCAL_AMFLAGS = -I m4
 AM_CFLAGS = $(WARN_CFLAGS)
-AM_CPPFLAGS = -I$(srcdir)/$(OS)/$(ARCH) -I$(srcdir)/$(OS) -I$(builddir)/$(OS)
+AM_CPPFLAGS = -I$(srcdir)/$(OS)/$(ARCH) -I$(srcdir)/$(OS) -I$(builddir)/$(OS) $(libunwind_CPPFLAGS)
 
 strace_SOURCES =	\
 	bjm.c		\
@@ -42,6 +42,14 @@ strace_SOURCES =	\
 	time.c		\
 	util.c		\
 	vsprintf.c
+
+
+if LIB_UNWIND
+strace_SOURCES += unwind.c
+strace_LDADD = $(libunwind_LIBS)
+AM_LDFLAGS = $(libunwind_LDFLAGS)
+endif
+
 
 noinst_HEADERS = defs.h
 # Enable this to get link map generated

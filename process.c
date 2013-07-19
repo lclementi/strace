@@ -992,6 +992,13 @@ sys_execve(struct tcb *tcp)
 			tprints("]");
 		}
 	}
+
+
+#ifdef LIB_UNWIND
+	if (exiting(tcp) && use_libunwind)
+		delete_mmap_cache(tcp);
+#endif
+
 	return 0;
 }
 
@@ -1209,6 +1216,13 @@ sys_waitid(struct tcb *tcp)
 				printrusage(tcp, tcp->u_arg[4]);
 		}
 	}
+
+
+#ifdef LIB_UNWIND
+	if (exiting(tcp) && use_libunwind)
+		delete_mmap_cache(tcp);
+#endif
+
 	return 0;
 }
 

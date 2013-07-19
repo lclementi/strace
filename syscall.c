@@ -2683,6 +2683,15 @@ trace_syscall_exiting(struct tcb *tcp)
 	dumpio(tcp);
 	line_ended();
 
+#ifdef LIB_UNWIND
+	if (use_libunwind) {
+		if (!tcp->mmap_cache) {
+			alloc_mmap_cache(tcp);
+		}
+		print_stacktrace(tcp);
+	}
+#endif
+
  ret:
 	tcp->flags &= ~TCB_INSYSCALL;
 	return 0;
