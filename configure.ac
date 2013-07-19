@@ -334,11 +334,14 @@ if test "x$ac_cv_header_libunwind_ptrace_h" = "xyes" &&
 fi
 
 dnl enable libunwind
-if test "x$ac_cv_lib_unwind_ptrace__UPT_create" == "xyes"; then 
+if test "x$ac_cv_lib_unwind_ptrace__UPT_create" == "xyes" &&
+	eval test \"x\$ac_cv_lib_unwind_generic__U"${UNWIND_ARCH}"_create_addr_space\" == "xyes" &&
+	test "x$ac_cv_lib_unwind_backtrace" == "xyes"; then
 	AC_DEFINE([LIB_UNWIND], 1, [Compile stack tracing functionality])
 	AC_MSG_NOTICE([Enabled stack tracing])
+	with_libunwind="yes"
 fi
-AM_CONDITIONAL([LIB_UNWIND], [test "x$ac_cv_lib_unwind_ptrace__UPT_create" == "xyes"])
+AM_CONDITIONAL([LIB_UNWIND], [test "x$with_libunwind" == "xyes"])
 
 
 AC_CHECK_MEMBERS([struct utsname.domainname],,, [#include <sys/utsname.h>])
