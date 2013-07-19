@@ -72,7 +72,7 @@ alloc_mmap_cache(struct tcb* tcp)
 			continue;
 		}
 
-		if(end_addr < start_addr)
+		if (end_addr < start_addr)
 			perror_msg_and_die("Unrecognized maps file format %s", filename);
 
 		cur_entry = &cache_head[tcp->mmap_cache_size];
