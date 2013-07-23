@@ -39,7 +39,7 @@
 strace \- trace system calls and signals
 .SH SYNOPSIS
 .B strace
-[\fB-CdffhiqrtttTvVxxy\fR]
+[\fB-CdffhikqrtttTvVxxy\fR]
 [\fB-I\fIn\fR]
 [\fB-b\fIexecve\fR]
 [\fB-e\fIexpr\fR]...
@@ -305,6 +305,9 @@ Print all non-ASCII strings in hexadecimal string format.
 .TP
 .B \-xx
 Print all strings in hexadecimal string format.
+.TP
+.B \-k
+Print the execution stack trace of the traced processes after each system call.
 .TP
 .B \-y
 Print paths associated with file descriptor arguments.
