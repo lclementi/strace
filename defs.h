@@ -430,6 +430,8 @@ struct tcb {
 	struct UPT_info* libunwind_ui;
 	struct mmap_cache_t* mmap_cache;
 	unsigned int mmap_cache_size;
+	unsigned int mmap_cache_generation;
+	struct queue_t* queue;
 #endif
 };
 
@@ -544,6 +546,8 @@ extern const struct xlat whence_codes[];
 #define TRACE_DESC	040	/* Trace file descriptor-related syscalls. */
 #define TRACE_MEMORY	0100	/* Trace memory mapping-related syscalls. */
 #define SYSCALL_NEVER_FAILS	0200	/* Syscall is always successful. */
+#define STACKTRACE_MAKE_CACHE_INVALID   0400	/* Trigger proc/maps cache updating */
+#define STACKTRACE_CAPTURE_IN_ENTERING  01000	/* Capture stacktrace in "entering" stage */
 
 typedef enum {
 	CFLAG_NONE = 0,
@@ -727,12 +731,12 @@ extern void tv_mul(struct timeval *, struct timeval *, int);
 extern void tv_div(struct timeval *, struct timeval *, int);
 
 #ifdef USE_LIBUNWIND
-extern void init_unwind_addr_space(void);
-extern void init_libunwind_ui(struct tcb *tcp);
-extern void free_libunwind_ui(struct tcb *tcp);
-extern void alloc_mmap_cache(struct tcb* tcp);
-extern void delete_mmap_cache(struct tcb* tcp);
-extern void print_stacktrace(struct tcb* tcp);
+extern void unwind_init(void);
+extern void unwind_tcb_init(struct tcb *);
+extern void unwind_tcb_fin(struct tcb *);
+extern void unwind_cache_invalidate(struct tcb * );
+extern void unwind_stacktrace_capture(struct tcb *);
+extern void unwind_stacktrace_print(struct tcb *);
 #endif
 
 /* Strace log generation machinery.

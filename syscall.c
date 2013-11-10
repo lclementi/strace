@@ -98,6 +98,8 @@
 #define TM TRACE_MEMORY
 #define NF SYSCALL_NEVER_FAILS
 #define MA MAX_ARGS
+#define CI STACKTRACE_MAKE_CACHE_INVALID
+#define CE STACKTRACE_CAPTURE_IN_ENTERING
 
 const struct_sysent sysent0[] = {
 #include "syscallent.h"
@@ -125,6 +127,8 @@ static const struct_sysent sysent2[] = {
 #undef TM
 #undef NF
 #undef MA
+#undef CI
+#undef CE
 
 /*
  * `ioctlent.h' may be generated from `ioctlent.raw' by the auxiliary
@@ -2026,12 +2030,31 @@ trace_syscall_entering(struct tcb *tcp)
 	 || (tracing_paths && !pathtrace_match(tcp))
 	) {
 		tcp->flags |= TCB_INSYSCALL | TCB_FILTERED;
+#ifdef USE_LIBUNWIND
+		if (stack_trace_enabled)
+			if (tcp->s_ent->sys_flags & STACKTRACE_MAKE_CACHE_INVALID)
+				unwind_cache_invalidate(tcp);
+#endif
 		return 0;
 	}
 
 	tcp->flags &= ~TCB_FILTERED;
 
-	if (cflag == CFLAG_ONLY_STATS || hide_log_until_execve) {
+	if (cflag == CFLAG_ONLY_STATS) {
+		res = 0;
+		goto ret;
+	}
+
+#ifdef USE_LIBUNWIND
+	if (stack_trace_enabled) {
+		if (tcp->s_ent->sys_flags & STACKTRACE_CAPTURE_IN_ENTERING)
+			unwind_stacktrace_capture(tcp);
+		if (tcp->s_ent->sys_flags & STACKTRACE_MAKE_CACHE_INVALID)
+			unwind_cache_invalidate(tcp);
+	}
+#endif
+
+	if (hide_log_until_execve) {
 		res = 0;
 		goto ret;
 	}
@@ -2709,7 +2732,7 @@ trace_syscall_exiting(struct tcb *tcp)
 
 #ifdef USE_LIBUNWIND
 	if (stack_trace_enabled)
-		print_stacktrace(tcp);
+		unwind_stacktrace_print(tcp);
 #endif
 
  ret:

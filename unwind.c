@@ -28,10 +28,13 @@
 #include <limits.h>
 #include <libunwind-ptrace.h>
 
+#define DPRINTF(F, A, ...) if (debug_flag) fprintf(stderr, "[unwind:" A " {" F "}]\n", __VA_ARGS__);
+
 /*
  * Кeep a sorted array of cache entries,
  * so that we can binary search through it.
  */
+static unsigned int mmap_cache_generation;
 struct mmap_cache_t {
 	/**
 	 * example entry:
@@ -45,12 +48,33 @@ struct mmap_cache_t {
 	unsigned long start_addr;
 	unsigned long end_addr;
 	unsigned long mmap_offset;
-	char* binary_filename;
+	char *binary_filename;
 };
+
+/*
+ * Keep a captured stracktrace.
+ */
+struct call_t {
+	struct call_t* next;
+	char *output_line;
+};
+
+struct queue_t {
+	struct call_t *tail;
+	struct call_t *head;
+};
+typedef void (*call_action_fn)(void *data,
+			       char *binary_filename,
+			       char *symbol_name,
+			       unw_word_t function_off_set,
+			       unsigned long true_offset);
+typedef void (*error_action_fn)(void *data,
+				const char *error,
+				unsigned long true_offset);
 
 static unw_addr_space_t libunwind_as;
 
-void
+static void
 init_unwind_addr_space(void)
 {
 	libunwind_as = unw_create_addr_space(&_UPT_accessors, 0);
@@ -58,7 +82,7 @@ init_unwind_addr_space(void)
 		error_msg_and_die("failed to create address space for stack tracing");
 }
 
-void
+static void
 init_libunwind_ui(struct tcb *tcp)
 {
 	tcp->libunwind_ui = _UPT_create(tcp->pid);
@@ -66,7 +90,7 @@ init_libunwind_ui(struct tcb *tcp)
 		die_out_of_memory();
 }
 
-void
+static void
 free_libunwind_ui(struct tcb *tcp)
 {
 	_UPT_destroy(tcp->libunwind_ui);
@@ -78,8 +102,28 @@ free_libunwind_ui(struct tcb *tcp)
  *
  * The cache must be refreshed after some syscall: mmap, mprotect, munmap, execve
  */
-void
-alloc_mmap_cache(struct tcb* tcp)
+/* deleting the cache */
+static void
+delete_mmap_cache(struct tcb *tcp, const char* caller)
+{
+	unsigned int i;
+
+	DPRINTF("gen=%u, GEN=%u, tcp=%p, cache=%p, at=%s", "delete",
+		tcp->mmap_cache_generation,
+		mmap_cache_generation,
+		tcp, tcp->mmap_cache, caller);
+
+	for (i = 0; i < tcp->mmap_cache_size; i++) {
+		free(tcp->mmap_cache[i].binary_filename);
+		tcp->mmap_cache[i].binary_filename = NULL;
+	}
+	free(tcp->mmap_cache);
+	tcp->mmap_cache = NULL;
+	tcp->mmap_cache_size = 0;
+}
+
+static void
+build_mmap_cache(struct tcb *tcp)
 {
 	unsigned long start_addr, end_addr, mmap_offset;
 	char filename[sizeof ("/proc/0123456789/maps")];
@@ -109,13 +153,11 @@ alloc_mmap_cache(struct tcb* tcp)
 		       &start_addr, &end_addr, &mmap_offset, binary_path);
 
 		/* ignore special 'fake files' like "[vdso]", "[heap]", "[stack]", */
-		if (binary_path[0] == '[') {
+		if (binary_path[0] == '[')
 			continue;
-		}
 
-		if (binary_path[0] == '\0') {
+		if (binary_path[0] == '\0')
 			continue;
-		}
 
 		if (end_addr < start_addr)
 			perror_msg_and_die("%s: unrecognized maps file format",
@@ -152,25 +194,216 @@ alloc_mmap_cache(struct tcb* tcp)
 	}
 	fclose(fp);
 	tcp->mmap_cache = cache_head;
+	tcp->mmap_cache_generation = mmap_cache_generation;
+
+	DPRINTF("gen=%u, GEN=%u, tcp=%p, cache=%p", "build",
+		tcp->mmap_cache_generation,
+		mmap_cache_generation,
+		tcp, tcp->mmap_cache);
 }
 
-/* deleting the cache */
-void
-delete_mmap_cache(struct tcb* tcp)
+static bool
+is_mmap_cache_available(struct tcb *tcp, const char *caller)
 {
-	unsigned int i;
-	for (i = 0; i < tcp->mmap_cache_size; i++) {
-		free(tcp->mmap_cache[i].binary_filename);
-		tcp->mmap_cache[i].binary_filename = NULL;
-	}
-	free(tcp->mmap_cache);
-	tcp->mmap_cache = NULL;
-	tcp->mmap_cache_size = 0;
+	if ((tcp->mmap_cache_generation != mmap_cache_generation)
+	    && tcp->mmap_cache)
+		delete_mmap_cache(tcp, caller);
+
+	if (!tcp->mmap_cache)
+		build_mmap_cache(tcp);
+
+	if (!tcp->mmap_cache || !tcp->mmap_cache_size)
+		return false;
+	else
+		return true;
 }
 
-/* use libunwind to unwind the stack and print a backtrace */
-void
-print_stacktrace(struct tcb* tcp)
+
+/*
+ * stack entry formatter
+ */
+#define STACK_ENTRY_SYMBOL_FMT			\
+	" > %s(%s+0x%lx) [0x%lx]\n",		\
+	binary_filename,			\
+	symbol_name,				\
+	function_off_set,			\
+	true_offset
+#define STACK_ENTRY_NOSYMBOL_FMT		\
+	" > %s() [0x%lx]\n",			\
+	binary_filename, true_offset
+#define STACK_ENTRY_BUG_FMT			\
+	" > BUG IN %s\n"
+#define STACK_ENTRY_ERROR_WITH_OFFSET_FMT	\
+	" > %s [0x%lx]\n", error, true_offset
+#define STACK_ENTRY_ERROR_FMT			\
+	" > %s [0x%lx]\n", error, true_offset
+
+#define OUTPUT_LINE_BUFLEN 128
+static char*
+sprint_call_or_error(char *binary_filename,
+		     char *symbol_name,
+		     unw_word_t function_off_set,
+		     unsigned long true_offset,
+		     const char *error)
+{
+	int n;
+	char *output_line;
+	unsigned int buflen;
+
+	n = (OUTPUT_LINE_BUFLEN - 1);
+	output_line = NULL;
+
+	do {
+		buflen = n + 1;
+		output_line = realloc(output_line, buflen);
+		if (!output_line)
+			die_out_of_memory();
+
+		if (symbol_name)
+			n = snprintf(output_line, buflen, STACK_ENTRY_SYMBOL_FMT);
+		else if (binary_filename)
+			n = snprintf(output_line, buflen, STACK_ENTRY_NOSYMBOL_FMT);
+		else if (error)
+			n = true_offset
+				? snprintf(output_line, buflen, STACK_ENTRY_ERROR_WITH_OFFSET_FMT)
+				: snprintf(output_line, buflen, STACK_ENTRY_ERROR_FMT);
+		else
+			n = snprintf(output_line, buflen, STACK_ENTRY_BUG_FMT, __FUNCTION__);
+
+		if (n < 0)
+			error_msg_and_die("error in snrpintf");
+	} while(n >= buflen);
+
+	return output_line;
+}
+
+static void
+print_call(char *binary_filename,
+	   char *symbol_name,
+	   unw_word_t function_off_set,
+	   unsigned long true_offset)
+{
+	if (symbol_name)
+		tprintf(STACK_ENTRY_SYMBOL_FMT);
+	else if (binary_filename)
+		tprintf(STACK_ENTRY_NOSYMBOL_FMT);
+	else
+		tprintf(STACK_ENTRY_BUG_FMT, __FUNCTION__);
+
+	line_ended();
+}
+
+static void
+print_error(const char *error,
+	    unsigned long true_offset)
+{
+	if (true_offset)
+		tprintf(STACK_ENTRY_ERROR_WITH_OFFSET_FMT);
+	else
+		tprintf(STACK_ENTRY_ERROR_FMT);
+
+	line_ended();
+}
+
+/*
+ * Queue releated functions
+ */
+static void
+queue_put(struct queue_t *queue,
+	  char *binary_filename,
+	  char *symbol_name,
+	  unw_word_t function_off_set,
+	  unsigned long true_offset,
+	  const char *error)
+{
+	struct call_t *call;
+
+	call = malloc(sizeof(*call));
+	if (!call)
+		die_out_of_memory();
+
+	call->output_line = sprint_call_or_error(binary_filename,
+						 symbol_name,
+						 function_off_set,
+						 true_offset,
+						 error);
+	call->next = NULL;
+
+	if (!queue->head) {
+		queue->head = call;
+		queue->tail = call;
+	} else {
+		queue->tail->next = call;
+		queue->tail = call;
+	}
+}
+
+static void
+queue_put_call(void *queue,
+	       char *binary_filename,
+	       char *symbol_name,
+	       unw_word_t function_off_set,
+	       unsigned long true_offset)
+{
+	queue_put(queue,
+		  binary_filename,
+		  symbol_name,
+		  function_off_set,
+		  true_offset,
+		  NULL);
+}
+
+static void
+queue_put_error(void *queue,
+		const char *error,
+		unw_word_t ip)
+{
+	queue_put(queue, NULL, NULL, 0, ip, error);
+}
+
+static void
+queue_free(struct queue_t *queue,
+	  void (* callback)(const char *output_line))
+{
+	struct call_t *call, *tmp;
+
+	queue->tail = NULL;
+	call = queue->head;
+	queue->head = NULL;
+	while (call) {
+		tmp = call;
+		call = call->next;
+
+		if (callback)
+			callback(tmp->output_line);
+
+		free(tmp->output_line);
+		tmp->output_line = NULL;
+		tmp->next = NULL;
+		free(tmp);
+	}
+}
+
+static void
+queue_printline(const char *output_line)
+{
+	tprints(output_line);
+	line_ended();
+}
+
+static void
+queue_print_and_free(struct tcb *tcp)
+{
+
+	DPRINTF("tcp=%p, queue=%p", "queueprint", tcp, tcp->queue->head);
+	queue_free(tcp->queue, queue_printline);
+}
+
+static void
+stacktrace_walk(struct tcb *tcp,
+		call_action_fn call_action,
+		error_action_fn error_action,
+		void *data)
 {
 	unw_word_t ip;
 	unw_cursor_t cursor;
@@ -179,14 +412,10 @@ print_stacktrace(struct tcb* tcp)
 	/* these are used for the binary search through the mmap_chace */
 	unsigned int lower, upper, mid;
 	size_t symbol_name_size = 40;
-	char * symbol_name;
-	struct mmap_cache_t* cur_mmap_cache;
+	char *symbol_name;
+	struct mmap_cache_t *cur_mmap_cache;
 	unsigned long true_offset;
 
-	if (!tcp->mmap_cache)
-		alloc_mmap_cache(tcp);
-	if (!tcp->mmap_cache || !tcp->mmap_cache_size)
-		return;
 
 	symbol_name = malloc(symbol_name_size);
 	if (!symbol_name)
@@ -236,25 +465,24 @@ print_stacktrace(struct tcb* tcp)
 					 * /lib64/libc.so.6(__libc_start_main+0xed) [0x7fa2f8a5976d]
 					 * ./a.out() [0x400569]
 					 */
-					tprintf(" > %s(%s+0x%lx) [0x%lx]\n",
-						cur_mmap_cache->binary_filename,
-						symbol_name, function_off_set, true_offset);
+					call_action(data,
+						    cur_mmap_cache->binary_filename,
+						    symbol_name,
+						    function_off_set,
+						    true_offset);
 				} else {
-					tprintf(" > %s() [0x%lx]\n",
-						cur_mmap_cache->binary_filename, true_offset);
+					call_action(data,
+						    cur_mmap_cache->binary_filename,
+						    symbol_name,
+						    0,
+						    true_offset);
 				}
-				line_ended();
 				break; /* stack frame printed */
 			}
 			else if (mid == 0) {
-				/*
-				 * there is a bug in libunwind >= 1.0
-				 * after a set_tid_address syscall
-				 * unw_get_reg returns IP == 0
-				 */
 				if(ip)
-					tprintf(" > backtracing_error\n");
-				line_ended();
+					error_action(data,
+						     "backtracing_error", 0);
 				goto ret;
 			}
 			else if (ip < cur_mmap_cache->start_addr)
@@ -264,19 +492,123 @@ print_stacktrace(struct tcb* tcp)
 
 		}
 		if (lower > upper) {
-			tprintf(" > backtracing_error [0x%lx]\n", ip);
-			line_ended();
+			error_action(data,
+				     "backtracing_error", ip);
 			goto ret;
 		}
 
 		ret_val = unw_step(&cursor);
 
 		if (++stack_depth > 255) {
-			tprintf("> too many stack frames\n");
-			line_ended();
+			error_action(data,
+				     "too many stack frames", 0);
 			break;
 		}
 	} while (ret_val > 0);
 ret:
 	free(symbol_name);
 }
+
+static void
+stacktrace_capture(struct tcb *tcp)
+{
+	stacktrace_walk(tcp, queue_put_call, queue_put_error,
+			tcp->queue);
+}
+
+
+static void
+print_call_cb(void *dummy,
+	      char *binary_filename,
+	      char *symbol_name,
+	      unw_word_t function_off_set,
+	      unsigned long true_offset)
+{
+	print_call(binary_filename,
+		   symbol_name,
+		   function_off_set,
+		   true_offset);
+}
+
+static void
+print_error_cb(void *dummy,
+	       const char *error,
+	       unsigned long true_offset)
+{
+	print_error(error, true_offset);
+}
+
+static void
+stacktrace_print(struct tcb *tcp)
+{
+	DPRINTF("tcp=%p, queue=%p", "stackprint", tcp, tcp->queue->head);
+	stacktrace_walk(tcp, print_call_cb, print_error_cb, NULL);
+}
+
+/*
+ *  Exported functions
+ *  use libunwind to unwind the stack and print a backtrace
+ */
+void
+unwind_init(void)
+{
+	init_unwind_addr_space();
+}
+
+void
+unwind_tcb_init(struct tcb *tcp)
+{
+	init_libunwind_ui(tcp);
+	tcp->queue = malloc(sizeof(*tcp->queue));
+	if (!tcp->queue)
+		die_out_of_memory();
+	tcp->queue->head = NULL;
+	tcp->queue->tail = NULL;
+}
+
+void
+unwind_tcb_fin(struct tcb *tcp)
+{
+	if (tcp->s_ent->sys_flags & STACKTRACE_CAPTURE_IN_ENTERING)
+		queue_print_and_free(tcp);
+	else
+		queue_free(tcp->queue, NULL);
+	free(tcp->queue);
+	tcp->queue = NULL;
+
+	delete_mmap_cache(tcp, __FUNCTION__);
+	free_libunwind_ui(tcp);
+
+}
+
+void
+unwind_cache_invalidate(struct tcb *tcp)
+{
+	mmap_cache_generation++;
+	DPRINTF("gen=%u, GEN=%u, tcp=%p, cache=%p", "increment",
+		tcp->mmap_cache_generation,
+		mmap_cache_generation,
+		tcp,
+		tcp->mmap_cache);
+}
+
+void
+unwind_stacktrace_capture(struct tcb *tcp)
+{
+	queue_free(tcp->queue, NULL);
+
+	if (is_mmap_cache_available(tcp, __FUNCTION__)) {
+		stacktrace_capture(tcp);
+		DPRINTF("tcp=%p, queue=%p", "captured", tcp, tcp->queue->head);
+	}
+}
+
+void
+unwind_stacktrace_print(struct tcb *tcp)
+{
+	if (tcp->s_ent->sys_flags & STACKTRACE_CAPTURE_IN_ENTERING)
+		queue_print_and_free(tcp);
+	else if (is_mmap_cache_available(tcp, __FUNCTION__))
+		stacktrace_print(tcp);
+}
+

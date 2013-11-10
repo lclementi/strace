@@ -990,12 +990,6 @@ sys_execve(struct tcb *tcp)
 			tprints("]");
 		}
 	}
-#ifdef USE_LIBUNWIND
-	else {
-		if (stack_trace_enabled)
-			delete_mmap_cache(tcp);
-	}
-#endif
 
 	return 0;
 }

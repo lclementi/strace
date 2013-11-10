@@ -696,7 +696,7 @@ alloctcb(int pid)
 
 #ifdef USE_LIBUNWIND
 			if (stack_trace_enabled)
-				init_libunwind_ui(tcp);
+			        unwind_tcb_init(tcp);
 #endif
 
 			nprocs++;
@@ -718,6 +718,11 @@ droptcb(struct tcb *tcp)
 	if (debug_flag)
 		fprintf(stderr, "dropped tcb for pid %d, %d remain\n", tcp->pid, nprocs);
 
+#ifdef USE_LIBUNWIND
+	if (stack_trace_enabled)
+	        unwind_tcb_fin(tcp);
+#endif
+
 	if (tcp->outf) {
 		if (followfork >= 2) {
 			if (tcp->curcol != 0)
@@ -735,12 +740,6 @@ droptcb(struct tcb *tcp)
 	if (printing_tcp == tcp)
 		printing_tcp = NULL;
 
-#ifdef USE_LIBUNWIND
-	if (stack_trace_enabled) {
-		delete_mmap_cache(tcp);
-		free_libunwind_ui(tcp);
-	}
-#endif
 	memset(tcp, 0, sizeof(*tcp));
 }
 
@@ -1805,7 +1804,7 @@ init(int argc, char *argv[])
 
 #ifdef USE_LIBUNWIND
 	if (stack_trace_enabled)
-		init_unwind_addr_space();
+		unwind_init();
 #endif
 
 	if (!followfork)
