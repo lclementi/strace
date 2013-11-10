@@ -26,7 +26,7 @@
  */
 
 	{ 6,	0,	solaris_syscall,	"syscall"	}, /* 0 */
-	{ 6,	TP,	solaris_exit,		"_exit"		}, /* 1 */
+	{ 6,	TP|CE,	solaris_exit,		"_exit"		}, /* 1 */
 	{ 6,	TP,	solaris_fork,		"fork"		}, /* 2 */
 	{ 6,	0,	solaris_read,		"read"		}, /* 3 */
 	{ 6,	0,	solaris_write,		"write"		}, /* 4 */
@@ -42,7 +42,7 @@
 	{ 6,	TF,	solaris_mknod,		"mknod"		}, /* 14 */
 	{ 6,	TF,	solaris_chmod,		"chmod"		}, /* 15 */
 	{ 6,	TF,	solaris_chown,		"chown"		}, /* 16 */
-	{ 6,	0,	solaris_brk,		"brk"		}, /* 17 */
+	{ 6,	CI,	solaris_brk,		"brk"		}, /* 17 */
 	{ 6,	TF,	solaris_stat,		"stat"		}, /* 18 */
 	{ 6,	0,	solaris_lseek,		"lseek"		}, /* 19 */
 	{ 6,	0,	solaris_getpid,		"getpid"	}, /* 20 */
@@ -84,7 +84,7 @@
 	{ 6,	0,	solaris_sysmp,		"sysmp"		}, /* 56 */
 	{ 6,	0,	solaris_utssys,		"utssys"	}, /* 57 */
 	{ 6,	0,	solaris_fdsync,		"fdsync"	}, /* 58 */
-	{ 6,	TF|TP,	solaris_execve,		"execve"	}, /* 59 */
+	{ 6,	TF|TP|CI|CE,solaris_execve,	"execve"	}, /* 59 */
 	{ 6,	0,	solaris_umask,		"umask"		}, /* 60 */
 	{ 6,	TF,	solaris_chroot,		"chroot"	}, /* 61 */
 	{ 6,	0,	solaris_fcntl,		"fcntl"		}, /* 62 */
@@ -140,9 +140,9 @@
 	{ 6,	0,	solaris_priocntlsys,	"priocntlsys"	}, /* 112 */
 	{ 6,	TF,	solaris_pathconf,	"pathconf"	}, /* 113 */
 	{ 6,	0,	solaris_mincore,	"mincore"	}, /* 114 */
-	{ 6,	TD|TM,	solaris_mmap,		"mmap"		}, /* 115 */
-	{ 6,	0,	solaris_mprotect,	"mprotect"	}, /* 116 */
-	{ 6,	0,	solaris_munmap,		"munmap"	}, /* 117 */
+	{ 6,	TD|TM|CI,solaris_mmap,		"mmap"		}, /* 115 */
+	{ 6,	CI,	solaris_mprotect,	"mprotect"	}, /* 116 */
+	{ 6,	CI,	solaris_munmap,		"munmap"	}, /* 117 */
 	{ 6,	0,	solaris_fpathconf,	"fpathconf"	}, /* 118 */
 	{ 6,	TP,	solaris_vfork,		"vfork"		}, /* 119 */
 	{ 6,	0,	solaris_fchdir,		"fchdir"	}, /* 120 */
@@ -185,7 +185,7 @@
 	{ 6,	0,	solaris_getitimer,	"getitimer"	}, /* 157 */
 	{ 6,	0,	solaris_setitimer,	"setitimer"	}, /* 158 */
 	{ 6,	0,	solaris_lwp_create,	"lwp_create"	}, /* 159 */
-	{ 6,	0,	solaris_lwp_exit,	"lwp_exit"	}, /* 160 */
+	{ 6,	CE,	solaris_lwp_exit,	"lwp_exit"	}, /* 160 */
 	{ 6,	0,	solaris_lwp_suspend,	"lwp_suspend"	}, /* 161 */
 	{ 6,	0,	solaris_lwp_continue,	"lwp_continue"	}, /* 162 */
 	{ 6,	0,	solaris_lwp_kill,	"lwp_kill"	}, /* 163 */
@@ -359,9 +359,9 @@
 	{ 6,	0,	NULL,			NULL		}, /* 328 */
 	{ 6,	0,	NULL,			NULL		}, /* 329 */
 
-	{ 6,	TI,	solaris_shmat,		"shmat"		}, /* 330 */
+	{ 6,	TI|CI,	solaris_shmat,		"shmat"		}, /* 330 */
 	{ 6,	TI,	solaris_shmctl,		"shmctl"	}, /* 331 */
-	{ 6,	TI,	solaris_shmdt,		"shmdt"		}, /* 332 */
+	{ 6,	TI|CI,	solaris_shmdt,		"shmdt"		}, /* 332 */
 	{ 6,	TI,	solaris_shmget,		"shmget"	}, /* 333 */
 	{ 6,	0,	NULL,			NULL		}, /* 334 */
 	{ 6,	0,	NULL,			NULL		}, /* 335 */
