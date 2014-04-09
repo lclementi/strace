@@ -569,7 +569,7 @@ unwind_tcb_init(struct tcb *tcp)
 void
 unwind_tcb_fin(struct tcb *tcp)
 {
-	if (tcp->s_ent->sys_flags & STACKTRACE_CAPTURE_IN_ENTERING)
+	if ((tcp->s_ent != NULL) && (tcp->s_ent->sys_flags & STACKTRACE_CAPTURE_IN_ENTERING))
 		queue_print_and_free(tcp);
 	else
 		queue_free(tcp->queue, NULL);
