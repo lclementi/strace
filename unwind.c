@@ -129,6 +129,7 @@ build_mmap_cache(struct tcb *tcp)
 	char filename[sizeof ("/proc/0123456789/maps")];
 	char buffer[PATH_MAX + 80];
 	char binary_path[PATH_MAX];
+	size_t blen;
 	struct mmap_cache_t *cur_entry, *prev_entry;
 	/* start with a small dynamically-allocated array and then expand it */
 	size_t cur_array_size = 10;
@@ -157,6 +158,11 @@ build_mmap_cache(struct tcb *tcp)
 			continue;
 
 		if (binary_path[0] == '\0')
+			continue;
+
+		/* ignore deleted file. */
+		blen = strlen(binary_path);
+		if (blen >= 10 && strcmp(binary_path + blen - 10, " (deleted)") == 0)
 			continue;
 
 		if (end_addr < start_addr)
